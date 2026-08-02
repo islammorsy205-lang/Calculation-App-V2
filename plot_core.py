@@ -365,7 +365,6 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
             dy = -0.15 if not invert_y_axis else 0.15
             y_base = n[1]
             
-            # التعديل الإجباري: رسم الركيزة اللي عند (0,0) بزاوية 45 درجة دائماً
             if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
                 theta = np.radians(-45)
                 c, s = np.cos(theta), np.sin(theta)
@@ -548,40 +547,46 @@ def draw_sap_moment_single(nodes, elements, scale_factor=1.0):
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_rxn_single(nodes, elements, R_total):
+def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
     draw_sap_base_frame(ax, nodes, elements)
     
     for i, n in enumerate(nodes):
-        rx, ry = R_total[3*i], R_total[3*i+1]
-        
-        # التعديل الإجباري: رسم الـ Reactions للركيزة اللي عند (0,0) بزاويتها الـ 45
+        # =========================================================================
+        # التعديل: تدوير الركيزة (Corner) واستخراج الـ Axial/Shear بناءً على حالة الـ Support
+        # =========================================================================
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
-            if abs(rx) > 0.1 or abs(ry) > 0.1:
-                theta = np.radians(-45)
-                c, s = np.cos(theta), np.sin(theta)
+            c, s = 0.70710678, 0.70710678
+            if corner_sup == "Hinged":
+                rx, ry = R_total[3*i], R_total[3*i+1]
                 R_axial = rx * c + ry * s
                 R_shear = -rx * s + ry * c
+            else:
+                tie_el = next((e for e in elements if e['mem'] == 'Tie'), None)
+                R_axial = tie_el['N_ax'] if tie_el else 0.0
+                R_shear = 0.0
+            
+            if abs(R_axial) > 0.1:
+                nx, ny = -c, -s
+                mag = abs(R_axial)
+                sign = np.sign(R_axial) if R_axial != 0 else 1
+                tail_x = -0.25 * nx * sign
+                tail_y = -0.25 * ny * sign
+                ax.annotate("", xy=(0, 0), xytext=(tail_x, tail_y), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                ax.text(tail_x * 1.5, tail_y * 1.5, f"{mag:.2f}", color='black', rotation=45, ha='center', va='center', fontsize=8, fontname='Arial')
                 
-                if abs(R_axial) > 0.1:
-                    dir_sign = np.sign(R_axial)
-                    tail_x = -0.25 * c * dir_sign
-                    tail_y = -0.25 * s * dir_sign
-                    ax.annotate("", xy=(0, 0), xytext=(tail_x, tail_y), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
-                    text_x = -0.35 * c * dir_sign
-                    text_y = -0.35 * s * dir_sign
-                    ax.text(text_x, text_y, f"{abs(R_axial):.2f}", color='black', rotation=-45, ha='center', va='center', fontsize=8, fontname='Arial', fontweight='normal')
-                if abs(R_shear) > 0.1:
-                    dir_sign = np.sign(R_shear)
-                    tail_x = 0.25 * s * dir_sign
-                    tail_y = -0.25 * c * dir_sign
-                    ax.annotate("", xy=(0, 0), xytext=(tail_x, tail_y), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
-                    text_x = 0.35 * s * dir_sign
-                    text_y = -0.35 * c * dir_sign
-                    ax.text(text_x, text_y, f"{abs(R_shear):.2f}", color='black', rotation=45, ha='center', va='center', fontsize=8, fontname='Arial', fontweight='normal')
+            if abs(R_shear) > 0.1:
+                nx, ny = s, -c
+                mag = abs(R_shear)
+                sign = np.sign(R_shear) if R_shear != 0 else 1
+                tail_x = -0.25 * nx * sign
+                tail_y = -0.25 * ny * sign
+                ax.annotate("", xy=(0, 0), xytext=(tail_x, tail_y), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                ax.text(tail_x * 1.5, tail_y * 1.5, f"{mag:.2f}", color='black', rotation=-45, ha='center', va='center', fontsize=8, fontname='Arial')
             continue
 
+        rx, ry = R_total[3*i], R_total[3*i+1]
         if abs(rx) > 0.1 or abs(ry) > 0.1:
             if abs(ry) > 0.1:
                 dy_arr = -0.25 if ry > 0 else 0.25
@@ -759,7 +764,7 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
     
     return img1_stream.getvalue(), img2_stream.getvalue(), img3_stream.getvalue(), max(total_Rx.values()) if total_Rx else 0, max(total_Ry.values()) if total_Ry else 0, max_N
 
-def generate_s2k_file(nodes, elements, custom_loads=None, dist_loads=None):
+def generate_s2k_file(nodes, elements, custom_loads=None, dist_loads=None, corner_sup="Hinged"):
     s2k_header = """File SAP2000 exported by Acrow Program
  
 TABLE:  "ACTIVE DEGREES OF FREEDOM"
@@ -802,7 +807,11 @@ TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
     lines.append('')
     lines.append('TABLE:  "JOINT RESTRAINT ASSIGNMENTS"')
     for i, n in enumerate(nodes):
-        if n[2] or n[3] or n[4]: 
+        # التعديل: تطبيق الركيزة وتدويرها في الـ SAP
+        if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
+            u3_val = 'Yes' if corner_sup == "Hinged" else 'No'
+            lines.append(f'   Joint={i+1}   U1=Yes   U2=No   U3={u3_val}   R1=No   R2=No   R3=No')
+        elif n[2] or n[3] or n[4]: 
             u1 = 'Yes' if n[2] else 'No' 
             u3 = 'Yes' if n[3] else 'No' 
             r2 = 'Yes' if n[4] else 'No' 
@@ -814,22 +823,24 @@ TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             lines.append(f'   Joint={i+1}   AngleA=0   AngleB=45   AngleC=0')
             
+    # تفريغ العنصر الوهمي من التصدير
+    export_elements = [el for el in elements if el['mem'] != 'Tie']
+            
     lines.append('')
     lines.append('TABLE:  "CONNECTIVITY - FRAME"')
-    for i, el in enumerate(elements):
+    for i, el in enumerate(export_elements):
         lines.append(f'   Frame={i+1}   JointI={el["n1"]+1}   JointJ={el["n2"]+1}   IsCurved=No')
         
     lines.append('')
     lines.append('TABLE:  "FRAME SECTION ASSIGNMENTS"')
-    for i, el in enumerate(elements):
+    for i, el in enumerate(export_elements):
         sec = el['sec']
-        if el['mem'] == 'Tie': sec = 'Tie'
         lines.append(f'   Frame={i+1}   AutoSelect=N.A.   AnalSect="{sec}"   MatProp=Default')
         
     lines.append('')
     lines.append('TABLE:  "FRAME RELEASE ASSIGNMENTS 1 - GENERAL"')
-    for i, el in enumerate(elements):
-        if el['type'] == 'truss' or el['mem'] == 'Tie':
+    for i, el in enumerate(export_elements):
+        if el['type'] == 'truss':
             lines.append(f'   Frame={i+1}   PI=No   V2I=No   V3I=No   TI=No   M2I=Yes   M3I=Yes   PJ=No   V2J=No   V3J=No   TJ=No   M2J=Yes   M3J=Yes')
             
     if custom_loads:
@@ -851,7 +862,7 @@ TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
         lines.append('TABLE:  "FRAME DISTRIBUTED LOADS"')
         for dl in dist_loads:
             y1, y2, w1, w2 = dl['y1'], dl['y2'], dl['w1'], dl['w2']
-            for i, el in enumerate(elements):
+            for i, el in enumerate(export_elements):
                 if el['mem'] == 'V':
                     ny1, ny2 = nodes[el['n1']][1], nodes[el['n2']][1]
                     ymin, ymax = min(ny1, ny2), max(ny1, ny2)
