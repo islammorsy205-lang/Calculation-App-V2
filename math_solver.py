@@ -17,7 +17,7 @@ def parse_loads_from_df(df):
     for _, row in df.iterrows():
         l_type = str(row.get("Load Type", "Linear")).strip()
 
-        # دالة ذكية لمنع انهيار البرنامج عند وجود خلايا فارغة أو مسافات
+        # دالة ذكية لمنع انهيار البرنامج عند وجود خلايا فارغة أو None
         def safe_float(val, default=0.0):
             if pd.isna(val) or val is None:
                 return float(default)
@@ -93,14 +93,10 @@ def get_scaffold_allowable(sys_type, subtype, unbraced):
             return pts[k1] + (pts[k2] - pts[k1]) * (unbraced - k1) / (k2 - k1)
     return 30.0
 
-# ====================================================================
-# Finite Element Solver for Continuous Beams (Flawless Exact FEF & Smart Units)
-# ====================================================================
 def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
     supports_x = sorted(list(set(supports_x)))
     n_sup = len(supports_x)
     
-    # 💡 الاستشعار الذكي للوحدات (Smart Unit Detection)
     if E_val > 5000.0:
         EI = E_val * I_val * 0.0001
     else:
@@ -240,9 +236,6 @@ def get_element_safety_details(conf, is_sec=True):
     
     return max_M, max_V, max_D, prop['Mall'], prop['Qall'], allw_D
 
-# ====================================================================
-# Finite Element Solver for Strongback System
-# ====================================================================
 def solve_fea(nodes, elements, custom_loads, dist_loads):
     NDOF = len(nodes) * 3
     K = np.zeros((NDOF, NDOF))
