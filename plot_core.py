@@ -220,10 +220,6 @@ def generate_acrow_diagrams(section_name, L_total, supports_x, loads, E, I, Mall
     abs_max_V = max(abs(max_V), abs(min_V))
     return img_stream.getvalue(), abs_max_M, abs_max_V, abs_max_D, np.max(R) if len(R)>0 else 0, all_def, def_txt
 
-# =========================================================================
-# دوال السترونج باك والـ SAP2000 (بدون Fill، دعامة 45 حقيقية، تهشير واسع، نصوص Arial)
-# =========================================================================
-
 def get_major_nodes(nodes, elements):
     connected_mems = [set() for _ in range(len(nodes))]
     node_degrees = [0] * len(nodes)
@@ -762,18 +758,40 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
     return img1_stream.getvalue(), img2_stream.getvalue(), img3_stream.getvalue(), max(total_Rx.values()) if total_Rx else 0, max(total_Ry.values()) if total_Ry else 0, max_N
 
 def generate_s2k_file(nodes, elements, custom_loads=None, dist_loads=None):
-    lines = []
-    lines.append('File SAP2000 exported by Acrow Program')
-    lines.append('')
-    lines.append('TABLE:  "ACTIVE DEGREES OF FREEDOM"')
-    lines.append('   UX=Yes   UY=No   UZ=Yes   RX=No   RY=Yes   RZ=No')
-    lines.append('')
-    lines.append('TABLE:  "ANALYSIS OPTIONS"')
-    lines.append('   Solver=Advanced   SolverProc=Auto   Force32Bit=No   StiffCase=None   GeomMod=None   HingeOpt="In Elements"')
-    lines.append('')
-    lines.append('TABLE:  "COORDINATE SYSTEMS"')
-    lines.append('   Name=GLOBAL   Type=Cartesian   X=0   Y=0   Z=0   AboutZ=0   AboutY=0   AboutX=0')
-    lines.append('')
+    s2k_header = """File SAP2000 exported by Acrow Program
+ 
+TABLE:  "ACTIVE DEGREES OF FREEDOM"
+   UX=Yes   UY=No   UZ=Yes   RX=No   RY=Yes   RZ=No
+ 
+TABLE:  "ANALYSIS OPTIONS"
+   Solver=Advanced   SolverProc=Auto   Force32Bit=No   StiffCase=None   GeomMod=None   HingeOpt="In Elements"
+ 
+TABLE:  "LOAD PATTERN DEFINITIONS"
+   LoadPat=DEAD   DesignType=Dead   SelfWtMult=0
+ 
+TABLE:  "MATERIAL PROPERTIES 01 - GENERAL"
+   Material=steel   Type=Steel   Grade="Grade 50"   SymType=Isotropic   TempDepend=No   Color=Gray8Dark
+   Material=TIMBER   Type=Other   SymType=Isotropic   TempDepend=No   Color=Yellow
+   
+TABLE:  "MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES"
+   Material=steel   UnitWeight=76.97   UnitMass=7.849   E1=199947978.79   G12=76903068.76   U12=0.3   A1=1.17E-05
+   Material=TIMBER   UnitWeight=8   UnitMass=0.815   E1=9066248.10   G12=3777603.37   U12=0.2   A1=1.17E-06
+   
+TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
+   SectionName="Soldier ][10"   Material=steel   Shape="Double Channel"   t3=0.1   t2=0.152   tf=0.008433   tw=0.006   dis=0.052   Area=0.002684208   TorsConst=4.71598771842043E-08   I33=4.1198870893659E-06   I22=5.580202752E-06   I23=0
+   SectionName="Soldier U100"   Material=steel   Shape="Double Channel"   t3=0.1   t2=0.152   tf=0.008433   tw=0.006   dis=0.052   Area=0.002684208   TorsConst=4.71598771842043E-08   I33=4.1198870893659E-06   I22=5.580202752E-06   I23=0
+   SectionName="Soldier ][8"   Material=steel   Shape="Double Channel"   t3=0.08   t2=0.12   tf=0.006   tw=0.005   dis=0.052   Area=0.002   TorsConst=4.71598E-08   I33=2.22E-06   I22=3.58E-06   I23=0
+   SectionName="Soldier ][12"   Material=steel   Shape="Double Channel"   t3=0.12   t2=0.16   tf=0.008   tw=0.006   dis=0.052   Area=0.003   TorsConst=4.71598E-08   I33=6.56E-06   I22=7.58E-06   I23=0
+   SectionName=PPH164   Material=steel   Shape=Pipe   t3=0.048   tw=0.002   Area=0.000289026
+   SectionName=PPH203   Material=steel   Shape=Pipe   t3=0.048   tw=0.002   Area=0.000289026
+   SectionName=PPH254   Material=steel   Shape=Pipe   t3=0.048   tw=0.002   Area=0.000289026
+   SectionName=PPH304   Material=steel   Shape=Pipe   t3=0.06   tw=0.0025   Area=0.0004516
+   SectionName=PPS132   Material=steel   Shape=Pipe   t3=0.06   tw=0.0025   Area=0.0004516
+   SectionName=MPP6   Material=steel   Shape=Pipe   t3=0.0966   tw=0.004   Area=0.0011636
+   SectionName=MPP9   Material=steel   Shape=Pipe   t3=0.0966   tw=0.004   Area=0.0011636
+   SectionName=Tie   Material=steel   Shape="SD Section"   Area=0.000176   I33=0   I22=0
+"""
+    lines = [s2k_header]
     
     lines.append('TABLE:  "JOINT COORDINATES"')
     for i, n in enumerate(nodes):
@@ -787,6 +805,12 @@ def generate_s2k_file(nodes, elements, custom_loads=None, dist_loads=None):
             u3 = 'Yes' if n[3] else 'No' 
             r2 = 'Yes' if n[4] else 'No' 
             lines.append(f'   Joint={i+1}   U1={u1}   U2=No   U3={u3}   R1=No   R2={r2}   R3=No')
+            
+    lines.append('')
+    lines.append('TABLE:  "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"')
+    for i, n in enumerate(nodes):
+        if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
+            lines.append(f'   Joint={i+1}   AngleA=0   AngleB=45   AngleC=0')
             
     lines.append('')
     lines.append('TABLE:  "CONNECTIVITY - FRAME"')
@@ -806,10 +830,6 @@ def generate_s2k_file(nodes, elements, custom_loads=None, dist_loads=None):
         if el['type'] == 'truss' or el['mem'] == 'Tie':
             lines.append(f'   Frame={i+1}   PI=No   V2I=No   V3I=No   TI=No   M2I=Yes   M3I=Yes   PJ=No   V2J=No   V3J=No   TJ=No   M2J=Yes   M3J=Yes')
             
-    lines.append('')
-    lines.append('TABLE:  "LOAD PATTERN DEFINITIONS"')
-    lines.append('   LoadPat=DEAD   DesignType=Dead   SelfWtMult=0')
-    
     if custom_loads:
         lines.append('')
         lines.append('TABLE:  "JOINT LOADS - FORCE"')
