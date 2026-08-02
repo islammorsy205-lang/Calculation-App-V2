@@ -168,6 +168,8 @@ if check_safety_btn:
                     support_comp_name = conf['t_name']
                     if conf['t_name'] == 'Acrow Prop' and conf.get('t_sub'):
                         support_comp_name = f"Support ({conf['t_sub']})"
+                    elif conf['t_name'] in ['Cup-lock', 'Ring-lock'] and conf.get('t_sub'):
+                        support_comp_name = f"Support ({conf['t_sub']}) [Unbraced={conf['t_unb']:.2f}m]"
                     else:
                         support_comp_name = f"Support ({conf['t_name']})"
                         
@@ -250,9 +252,11 @@ if generate_doc_btn:
                         
                 for k, v in replacements.items():
                     if k in p.text:
+                        # Attempt to replace within runs to keep colors/fonts
                         for r in p.runs:
                             if k in r.text:
                                 r.text = r.text.replace(k, str(v))
+                        # Fallback if split across runs
                         if k in p.text:  
                             p.text = p.text.replace(k, str(v))
 
@@ -529,11 +533,11 @@ if generate_doc_btn:
                         add_eq(doc, f"For Push Pull {st_d['type'].split()[0]}", underline=True, color=RGBColor(192,0,0))
                         add_word_check(doc, "N (Pact. from Sap)", val_t, STRUTS_DB.get(st_d['type'], {}).get('allow', 999), "KN")
                         
+                    # التعديل: الاعتماد على الـ Tension المباشر للزرجينة بدلاً من الشير للـ Lower Soldier
                     doc.add_paragraph()
                     add_heading_14(doc, "- Check for Lower Soldier:")
                     add_eq(doc, f"- Each Strongback tied with two tie rods at spacing {sb.get('tie_h',0)*100:.0f}cm")
-                    waler_R = sb['tie_T_single'] * 2
-                    add_eq_highlight(doc, f"- Assign load on Soldier= ", f"{waler_R:.2f} Kn")
+                    add_eq_highlight(doc, f"- Assign load on Soldier= ", f"{sb['tie_force_total']:.2f} KN")
                     add_word_check(doc, "Check for Moment", sb['waler_M'], SECTIONS_DB[sb['waler_sec']]['Mall'], "KN.m")
                     
                     doc.add_paragraph()
@@ -690,6 +694,7 @@ if generate_doc_btn:
                         add_word_check(doc, "Max Shear per Bolt (Worst Base)", max_rx_base/2, 29.50, "KN")
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
 
+            # --- التعديل هنا: إظهار داتا شيت الهيلتي في حالة החوائط أو الأعمدة فقط ---
             if "Vertical" in sys_cat and os.path.exists("Hilti_Bolt.pdf"):
                 doc.add_page_break()
                 append_pdf_stream_to_word("Hilti_Bolt.pdf", doc, is_path=True, max_width_cm=17.5, max_height_cm=24.0, add_border=False)
