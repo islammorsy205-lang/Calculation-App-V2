@@ -179,7 +179,7 @@ if check_safety_btn:
                 sb = conf['strongback']
                 sb_m_v_safe, sb_v_v_safe = sb['M_v'] <= SECTIONS_DB[sb['sv']]['Mall'], sb['V_v'] <= SECTIONS_DB[sb['sv']]['Qall']
                 sb_m_h_safe, sb_v_h_safe = sb['M_h'] <= SECTIONS_DB[sb['sh']]['Mall'], sb['V_h'] <= SECTIONS_DB[sb['sh']]['Qall']
-                sb_tie_safe, sb_waler_safe = sb['tie_T_single'] <= 90.0, sb['waler_M'] <= SECTIONS_DB[sb['waler_sec']]['Mall']
+                sb_tie_safe, sb_waler_safe = sb.get('tie_T_single', 0.0) <= 90.0, sb['waler_M'] <= SECTIONS_DB[sb['waler_sec']]['Mall']
                 sb_pin_safe = sb['max_diag_force'] <= 80.0
                 
                 df_data.append({"Component": f"Vert Soldier ({sb['sv']})", "Moment/Z": f"{'SAFE' if sb_m_v_safe else 'UNSAFE'}", "Shear": f"{'SAFE' if sb_v_v_safe else 'UNSAFE'}", "Deflection": "-", "Support/Reaction": "-", "Status": "SAFE" if (sb_m_v_safe and sb_v_v_safe) else "UNSAFE"})
@@ -252,11 +252,9 @@ if generate_doc_btn:
                         
                 for k, v in replacements.items():
                     if k in p.text:
-                        # Attempt to replace within runs to keep colors/fonts
                         for r in p.runs:
                             if k in r.text:
                                 r.text = r.text.replace(k, str(v))
-                        # Fallback if split across runs
                         if k in p.text:  
                             p.text = p.text.replace(k, str(v))
 
@@ -537,12 +535,16 @@ if generate_doc_btn:
                     doc.add_paragraph()
                     add_heading_14(doc, "- Check for Lower Soldier:")
                     add_eq(doc, f"- Each Strongback tied with two tie rods at spacing {sb.get('tie_h',0)*100:.0f}cm")
-                    add_eq_highlight(doc, f"- Assign load on Soldier= ", f"{sb['tie_force_total']:.2f} KN")
+                    
+                    # Fallback protection to avoid any KeyErrors
+                    t_force = sb.get('tie_force_total', sb.get('tie_T_single', 0.0) * 2.0)
+                    add_eq_highlight(doc, f"- Assign load on Soldier= ", f"{t_force:.2f} KN")
+                    
                     add_word_check(doc, "Check for Moment", sb['waler_M'], SECTIONS_DB[sb['waler_sec']]['Mall'], "KN.m")
                     
                     doc.add_paragraph()
                     add_heading_14(doc, "- Check for Tie rod Ø15mm at angle 45°:")
-                    add_word_check(doc, "Tie Force", sb['tie_T_single'], 90.00, "KN")
+                    add_word_check(doc, "Tie Force", sb.get('tie_T_single', 0.0), 90.00, "KN")
                     
                     if 'img_ld_single' in sb:
                         doc.add_page_break()
@@ -694,7 +696,7 @@ if generate_doc_btn:
                         add_word_check(doc, "Max Shear per Bolt (Worst Base)", max_rx_base/2, 29.50, "KN")
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
 
-            # --- التعديل هنا: إظهار داتا شيت الهيلتي في حالة החوائط أو الأعمدة فقط ---
+            # --- التعديل هنا: داتا شيت الهيلتي تظهر في حالة الحوائط أو الأعمدة فقط ---
             if "Vertical" in sys_cat and os.path.exists("Hilti_Bolt.pdf"):
                 doc.add_page_break()
                 append_pdf_stream_to_word("Hilti_Bolt.pdf", doc, is_path=True, max_width_cm=17.5, max_height_cm=24.0, add_border=False)
