@@ -316,6 +316,7 @@ def draw_truss_axial(ax, x1, y1, x2, y2, N, sc, color):
     ax.text(mid_x, mid_y, f"{abs(N):.2f}", color=color, fontsize=7, ha='center', va='center', rotation=angle, fontname='Arial', fontweight='normal', bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.3))
 
 def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
+    has_tie = any(el['mem'] == 'Tie' for el in elements)
     valid_nodes = [n for n in nodes if not (n[0] < -0.1 and n[1] < -0.1)]
     if not valid_nodes: valid_nodes = nodes
     
@@ -365,14 +366,25 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
             dy = -0.15 if not invert_y_axis else 0.15
             y_base = n[1]
             
+            # التعديل الإجباري: رسم الركيزة اللي عند (0,0) بزاوية 45 درجة (رولر أو هنجد)
             if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
                 theta = np.radians(-45)
                 c, s = np.cos(theta), np.sin(theta)
                 def rot(px, py): return px*c - py*s, px*s + py*c
-                p1, p2, p3 = rot(0,0), rot(-0.1,-0.15), rot(0.1,-0.15)
-                ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
-                l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
-                ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
+                
+                if has_tie: # Roller @ 45 deg
+                    p1, p2, p3 = rot(0,0), rot(-0.075,-0.12), rot(0.075,-0.12)
+                    ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
+                    c1, c2 = rot(-0.04, -0.135), rot(0.04, -0.135)
+                    ax.add_patch(plt.Circle((c1[0]+n[0], c1[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=1.5))
+                    ax.add_patch(plt.Circle((c2[0]+n[0], c2[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=1.5))
+                    l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
+                    ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
+                else: # Hinged @ 45 deg
+                    p1, p2, p3 = rot(0,0), rot(-0.1,-0.15), rot(0.1,-0.15)
+                    ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
+                    l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
+                    ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
                 continue
 
             if n[2] and n[3]: 
@@ -390,17 +402,7 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
     draw_sap_base_frame(ax, nodes, elements)
     major_nodes = get_major_nodes(nodes, elements)
     
-    y_nodes_v = sorted(list(set([round(nodes[idx][1],3) for idx in major_nodes if nodes[idx][0] == 0])))
-    for y in y_nodes_v:
-        if y > 0:
-            ax.plot([-0.2, 0], [y, y], color='black', lw=0.5)
-            ax.text(-0.3, y, f"{y:.1f}", color='black', ha='right', va='center', fontsize=7, fontname='Arial', fontweight='normal')
-            
-    x_nodes_h = sorted(list(set([round(nodes[idx][0],3) for idx in major_nodes if nodes[idx][1] == 0])))
-    for x in x_nodes_h:
-        if x > 0:
-            ax.plot([x, x], [-0.2, 0], color='black', lw=0.5)
-            ax.text(x, -0.3, f"{x:.2f}", color='black', ha='center', va='top', fontsize=7, fontname='Arial', fontweight='normal')
+    # التعديل: تم مسح كل أرقام وإحداثيات النقط الجانبية (y_nodes_v و x_nodes_h) لعرض الأحمال فقط بشكل نظيف
             
     if dist_loads:
         sc = (1.0 / max([max(abs(dl['w1']), abs(dl['w2'])) for dl in dist_loads] + [1])) * scale_factor
@@ -551,18 +553,17 @@ def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
     draw_sap_base_frame(ax, nodes, elements)
+    has_tie = any(el['mem'] == 'Tie' for el in elements)
     
     for i, n in enumerate(nodes):
-        # =========================================================================
-        # التعديل: تدوير الركيزة (Corner) واستخراج الـ Axial/Shear بناءً على حالة الـ Support
-        # =========================================================================
+        # التعديل: تدوير الركيزة (Corner) واستخراج الـ Axial/Shear بناءً على حالة الـ Support بزاويتها الـ 45
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             c, s = 0.70710678, 0.70710678
-            if corner_sup == "Hinged":
+            if not has_tie: # Hinged (يعرض Tension و Shear)
                 rx, ry = R_total[3*i], R_total[3*i+1]
                 R_axial = rx * c + ry * s
                 R_shear = -rx * s + ry * c
-            else:
+            else: # Roller (يعرض Tension فقط)
                 tie_el = next((e for e in elements if e['mem'] == 'Tie'), None)
                 R_axial = tie_el['N_ax'] if tie_el else 0.0
                 R_shear = 0.0
@@ -573,8 +574,8 @@ def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
                 sign = np.sign(R_axial) if R_axial != 0 else 1
                 tail_x = -0.25 * nx * sign
                 tail_y = -0.25 * ny * sign
-                ax.annotate("", xy=(0, 0), xytext=(tail_x, tail_y), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
-                ax.text(tail_x * 1.5, tail_y * 1.5, f"{mag:.2f}", color='black', rotation=45, ha='center', va='center', fontsize=8, fontname='Arial')
+                ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                ax.text(tail_x*1.5+n[0], tail_y*1.5+n[1], f"{mag:.2f}", color='black', rotation=45, ha='center', va='center', fontsize=8, fontname='Arial')
                 
             if abs(R_shear) > 0.1:
                 nx, ny = s, -c
@@ -582,8 +583,8 @@ def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
                 sign = np.sign(R_shear) if R_shear != 0 else 1
                 tail_x = -0.25 * nx * sign
                 tail_y = -0.25 * ny * sign
-                ax.annotate("", xy=(0, 0), xytext=(tail_x, tail_y), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
-                ax.text(tail_x * 1.5, tail_y * 1.5, f"{mag:.2f}", color='black', rotation=-45, ha='center', va='center', fontsize=8, fontname='Arial')
+                ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                ax.text(tail_x*1.5+n[0], tail_y*1.5+n[1], f"{mag:.2f}", color='black', rotation=-45, ha='center', va='center', fontsize=8, fontname='Arial')
             continue
 
         rx, ry = R_total[3*i], R_total[3*i+1]
@@ -807,7 +808,6 @@ TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
     lines.append('')
     lines.append('TABLE:  "JOINT RESTRAINT ASSIGNMENTS"')
     for i, n in enumerate(nodes):
-        # التعديل: تطبيق الركيزة وتدويرها في الـ SAP
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             u3_val = 'Yes' if corner_sup == "Hinged" else 'No'
             lines.append(f'   Joint={i+1}   U1=Yes   U2=No   U3={u3_val}   R1=No   R2=No   R3=No')
@@ -823,7 +823,6 @@ TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             lines.append(f'   Joint={i+1}   AngleA=0   AngleB=45   AngleC=0')
             
-    # تفريغ العنصر الوهمي من التصدير
     export_elements = [el for el in elements if el['mem'] != 'Tie']
             
     lines.append('')
