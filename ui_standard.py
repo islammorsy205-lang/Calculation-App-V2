@@ -1,0 +1,435 @@
+# ui_standard.py
+
+import streamlit as st
+import pandas as pd
+import fitz
+import re
+from helpers import get_val, get_idx, convert_transparent_to_pdf_stream
+from config import SECTIONS_DB, STD_LENGTHS, SHORING_OPTIONS_SLAB, ECO_FORM_ALLOW, TECH_FORM_ALLOW, CIRCULAR_ALLOW
+from math_solver import parse_loads_from_df, generate_hydrostatic_loads, get_shoring_allowable
+from plot_core import draw_system_sketch, generate_acrow_diagrams
+
+# سيتم استدعاء الرياح والسترونج باك كملفات مستقلة تماماً داخل هذا الملف
+from ui_strongback import render_strongback_ui
+from ui_wind import render_wind_tilting_ui
+
+def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
+    etype_opts = ["Slab", "Drop Panel", "Beam"]
+    element_type = st.radio("Element Type:", etype_opts, key=f"etype_{i}", horizontal=True, index=get_idx("etype", i, etype_opts, 0))
+    
+    st.markdown("### 🧱 Load Config")
+    if element_type == "Beam":
+        cb1, cb2 = st.columns(2)
+        with cb1: 
+            b_width = st.number_input("Beam Width (m)", value=float(get_val("bw", i, 0.30)), step=0.05, key=f"bw_{i}")
+        with cb2: 
+            ts = st.number_input("Beam Depth (m)", value=float(get_val("ts_beam", i, 0.60)), step=0.05, key=f"ts_beam_{i}")
+        bpos_opts = ["Edge", "Middle"]
+        beam_pos = st.radio("Beam Position:", bpos_opts, key=f"bpos_{i}", horizontal=True, index=get_idx("bpos", i, bpos_opts, 0))
+    else: 
+        ts = st.number_input(f"{element_type} Thickness (m)", value=float(get_val("ts_thick", i, 0.30)), step=0.05, key=f"ts_thick_{i}")
+        b_width = 0
+        beam_pos = "None"
+        
+    w_tot = (gamma_c * ts) + live_load + fw_load
+    st.info(f"**Total Basic Load** = {w_tot:.2f} kN/m²")
+    p_th = "18.00 mm"
+    p_mal = 54.0
+
+    st.divider()
+    with st.container(border=True):
+        st.markdown("### 🪵 Secondary Beam")
+        col_s1, col_s2 = st.columns([1, 1.2])
+        with col_s1:
+            s_sec = st.selectbox("Sec Section", list(SECTIONS_DB.keys()), index=get_idx("ss", i, list(SECTIONS_DB.keys()), def_sec), key=f"ss_{i}")
+            s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("ssp", i, 0.35)), step=0.05, key=f"ssp_{i}")
+            s_w_calc = w_tot * s_spc
+            
+            s_l1_opts = [0.0] + STD_LENGTHS.get(s_sec, [3.0])
+            s_l1_idx = get_idx("sl1", i, s_l1_opts, len(s_l1_opts)-1 if s_sec in STD_LENGTHS else 1)
+            s_L = st.selectbox("Total Length (m)", s_l1_opts, index=s_l1_idx, key=f"sl1_{i}")
+            st.success(f"**Total Length = {s_L:.2f} m**")
+            
+            s_cl = st.number_input("L. Cant (m)", value=float(get_val("scl", i, 0.50)), step=0.05, key=f"scl_{i}")
+            s_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("sspn", i, "1.30, 1.30")), key=f"sspn_{i}")
+            
+            # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
+            s_spans_list = [float(x.strip()) for x in s_spns.split(',') if x.strip()]
+            s_cr = s_L - s_cl - sum(s_spans_list)
+            
+            if s_cr < -0.01: 
+                st.error(f"❌ Error: Spans exceed total length!")
+        
+        with col_s2:
+            st.markdown("**Load Assignment & Interactive Sketch**")
+            if element_type == "Beam":
+                def_s_la = max(0.0, (s_L / 2.0) - (b_width / 2.0) if beam_pos == "Middle" else s_cl - 0.05)
+                def_s_lb = min(s_L, max(def_s_la, def_s_la + b_width))
+            else: 
+                def_s_la, def_s_lb = 0.0, s_L
+                
+            s_df = pd.DataFrame([{
+                "Load Type": "Linear", 
+                "WA (kN/m) or P (kN)": round(s_w_calc, 2), 
+                "WB (kN/m)": round(s_w_calc, 2), 
+                "LA (m) or X (m)": round(def_s_la, 2), 
+                "LB (m)": round(def_s_lb, 2)
+            }])
+            
+            s_loads_df = st.data_editor(
+                s_df, num_rows="dynamic", hide_index=True, use_container_width=True, key=f"sdf_{i}",
+                column_config={"Load Type": st.column_config.SelectboxColumn("Load Type", options=["Linear", "Trapezoidal", "Point"], required=True)}
+            )
+            s_loads_parsed = parse_loads_from_df(s_loads_df)
+            s_supports = [s_cl] + [s_cl + sum(s_spans_list[:j+1]) for j in range(len(s_spans_list))]
+                
+            if s_L > 0 and s_cr >= -0.01: 
+                c_pad1, c_img, c_pad2 = st.columns([1, 4, 1])
+                with c_img: 
+                    s_sketch_bytes = draw_system_sketch(s_L, s_supports, s_loads_parsed, transparent_bg=True)
+                    st.image(s_sketch_bytes, use_container_width=True)
+                    
+                if st.toggle("📊 Show Analysis Diagrams", key=f"tgl_diag_s_slab_{i}"):
+                    with st.spinner("Calculating..."):
+                        s_img_bytes, _, _, _, _, _, _ = generate_acrow_diagrams(
+                            s_sec, s_L, s_supports, s_loads_parsed, SECTIONS_DB[s_sec]['E'], SECTIONS_DB[s_sec]['I'], 
+                            SECTIONS_DB[s_sec]['Mall'], SECTIONS_DB[s_sec]['Qall'], Rall=None, transparent_bg=True
+                        )
+                        col_dwn, img_col, _ = st.columns([1, 3, 1])
+                        with col_dwn: 
+                            st.download_button("📥 PDF", convert_transparent_to_pdf_stream(s_img_bytes), f"{s_sec}_Diagram.pdf", "application/pdf", key=f"dwn_s_slab_{i}")
+                        with img_col: 
+                            st.image(s_img_bytes, use_container_width=True)
+
+    st.divider()
+    with st.container(border=True):
+        st.markdown("### 🏗️ Main Beam & Shoring")
+        col_m1, col_m2 = st.columns([1, 1.2])
+        with col_m1:
+            m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("ms", i, list(SECTIONS_DB.keys()), def_main), key=f"ms_{i}")
+            m_spc_def = b_width if beam_pos == "Edge" else b_width/2.0 if element_type == "Beam" else 1.10
+            m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val(f"msp_{beam_pos}", i, m_spc_def)), step=0.05, key=f"msp_{i}")
+            m_w_calc = w_tot * m_spc
+            
+            m_l1_opts = [0.0] + STD_LENGTHS.get(m_sec, [3.0])
+            m_l1_idx = get_idx("wml1", i, m_l1_opts, len(m_l1_opts)-1 if m_sec in STD_LENGTHS else 1)
+            m_L = st.selectbox("Total Length (m)", m_l1_opts, index=m_l1_idx, key=f"wml1_{i}")
+            st.success(f"**Total Length = {m_L:.2f} m**")
+            
+            m_cl = st.number_input("L. Cant (m)", value=float(get_val("mcl", i, 0.50)), step=0.05, key=f"mcl_{i}")
+            m_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("mspn", i, "1.20")), key=f"mspn_{i}")
+            
+            # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
+            m_spans_list = [float(x.strip()) for x in m_spns.split(',') if x.strip()]
+            m_cr = m_L - m_cl - sum(m_spans_list)
+            
+            if m_cr < -0.01: 
+                st.error(f"❌ Error: Spans exceed total length!")
+                
+            t_nm = st.selectbox("Shoring Type", SHORING_OPTIONS_SLAB, index=get_idx("tn", i, SHORING_OPTIONS_SLAB, 0), key=f"tn_{i}")
+            if t_nm == "Tie rod 15mm": 
+                t_al = st.number_input("Allowable (kN)", value=90.0, disabled=True, key=f"ta_auto_{i}")
+            elif t_nm in ["Shorebrace Frame", "Acrow Frame"]: 
+                t_al = st.number_input("Allowable (kN)", value=float(get_shoring_allowable(t_nm, 0)), disabled=True, key=f"ta_auto_{i}")
+            elif t_nm in ["Prop", "Other (Manual Input)"]: 
+                t_al = st.number_input("Allowable (kN)", value=float(get_val("ta_man", i, 20.0)), step=0.5, key=f"ta_man_{i}")
+            else:
+                unbraced_l = st.number_input("Unbraced Length (m)", min_value=0.5, max_value=3.0, value=float(get_val("unbraced", i, 1.5)), step=0.5, key=f"unbraced_{i}")
+                calc_al = get_shoring_allowable(t_nm, unbraced_l)
+                t_al = st.number_input("Allowable (kN)", value=float(calc_al) if calc_al else float(get_val("ta_fb", i, 30.0)), disabled=calc_al is not None, step=0.5, key=f"ta_auto_{i}_{unbraced_l}")
+
+        with col_m2:
+            st.markdown("**Load Assignment & Interactive Sketch**")
+            m_df = pd.DataFrame([{
+                "Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_calc, 2), 
+                "WB (kN/m)": round(m_w_calc, 2), "LA (m) or X (m)": 0.0, "LB (m)": m_L
+            }])
+            
+            m_loads_df = st.data_editor(
+                m_df, num_rows="dynamic", hide_index=True, use_container_width=True, key=f"mdf_{i}",
+                column_config={"Load Type": st.column_config.SelectboxColumn("Load Type", options=["Linear", "Trapezoidal", "Point"], required=True)}
+            )
+            m_loads_parsed = parse_loads_from_df(m_loads_df)
+            m_supports = [m_cl] + [m_cl + sum(m_spans_list[:j+1]) for j in range(len(m_spans_list))]
+                
+            if m_L > 0 and m_cr >= -0.01: 
+                c_pad1, c_img, c_pad2 = st.columns([1, 4, 1])
+                with c_img: 
+                    m_sketch_bytes = draw_system_sketch(m_L, m_supports, m_loads_parsed, transparent_bg=True)
+                    st.image(m_sketch_bytes, use_container_width=True)
+                    
+                if st.toggle("📊 Show Analysis Diagrams", key=f"tgl_diag_m_slab_{i}"):
+                    with st.spinner("Calculating..."):
+                        m_img_bytes, _, _, _, _, _, _ = generate_acrow_diagrams(
+                            m_sec, m_L, m_supports, m_loads_parsed, SECTIONS_DB[m_sec]['E'], SECTIONS_DB[m_sec]['I'], 
+                            SECTIONS_DB[m_sec]['Mall'], SECTIONS_DB[m_sec]['Qall'], Rall=t_al, transparent_bg=True
+                        )
+                        col_dwn, img_col, _ = st.columns([1, 3, 1])
+                        with col_dwn: 
+                            st.download_button("📥 PDF", convert_transparent_to_pdf_stream(m_img_bytes), f"{m_sec}_Diagram.pdf", "application/pdf", key=f"dwn_m_slab_{i}")
+                        with img_col: 
+                            st.image(m_img_bytes, use_container_width=True)
+    
+    return {
+        "cat": "horizontal", "sub_cat": element_type, "ts": ts, "beam_b": b_width, "w": w_tot, 
+        "ply_thick": p_th, "ply_mall": p_mal, "s_sec": s_sec, "s_spc": s_spc, "s_L": s_L, 
+        "s_cl": s_cl, "s_sp": s_spns, "s_cr": s_cr, "s_ld": s_loads_parsed, "s_sup": s_supports, 
+        "s_ld_img": s_sketch_bytes, "m_sec": m_sec, "m_spc": m_spc, "m_L": m_L, "m_cl": m_cl, 
+        "m_sp": m_spns, "m_cr": m_cr, "m_ld": m_loads_parsed, "m_sup": m_supports, 
+        "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al
+    }
+
+def render_vertical_element(i, element_subtype, def_sec, def_main):
+    if f"hp_{i}" not in st.session_state: 
+        st.session_state[f"hp_{i}"] = float(get_val("hp", i, 3.50))
+        
+    wall_pdf_curr = None
+    t_nm = "Tie rod 15mm"
+    t_al = 90.0
+    section_data = {}
+    
+    if element_subtype == "Wall":
+        wall_type = st.radio("Wall Type:", ["Double Sided Wall", "Single Sided Wall (Strongback)"], horizontal=True, key=f"wt_{i}") 
+    else:
+        wall_type = "Double Sided Wall"
+        
+    is_single_sided = (wall_type == "Single Sided Wall (Strongback)")
+    
+    if is_single_sided:
+        vsys_opts = ["Timber H20 & Soldier System", "Acrow Beam S12 & Soldier System", "Eco-form Panel System", "Tech-form Panel System"]
+    elif element_subtype == "Wall":
+        vsys_opts = ["H20 & Soldier System", "VMC Panel System", "Eco-form Panel System", "Tech-form Panel System", "Curved Steel Panel System"]
+    else:
+        vsys_opts = ["H20 & Soldier System", "VMC Panel System", "Eco-form Panel System", "Tech-form Panel System", "Circular Steel Panel System"]
+        
+    vert_system = st.selectbox("Formwork System", vsys_opts, index=get_idx("vsys", i, vsys_opts, 0), key=f"vsys_{i}")
+    is_panel_sys = "Panel" in vert_system
+    
+    st.markdown("### 🧱 Concrete Pressure Configuration")
+    col_w1, col_w2, col_w3 = st.columns(3)
+    with col_w1:
+        st.link_button("🔗 Open Acrow Concrete Pressure Calculator", "https://acrow-sdt.github.io/pressure-calculator/")
+        wall_pdf_curr = st.file_uploader("Upload Pressure PDF (Auto-extracts Value):", type=['pdf'], key=f"wall_pdf_{i}")
+    
+    if wall_pdf_curr:
+        text = "".join([page.get_text() for page in fitz.open(stream=wall_pdf_curr.read(), filetype="pdf")])
+        match_p = re.search(r'(?i)(pressure|pmax|p\s*=)[\s:=]*([\d.]+)', text)
+        w_tot = float(match_p.group(2)) if match_p else 47.16
+        h_static = w_tot / 25.0
+        st.success(f"✅ Auto-extracted: Pmax = {w_tot} kN/m², H static = {h_static:.2f} m")
+        wall_pdf_curr.seek(0)
+    else:
+        with col_w2: w_tot = st.number_input("Concrete Pressure Pmax (kN/m²)", value=float(get_val("wall_p", i, 47.16)), step=0.05, key=f"wall_p_{i}")
+        with col_w3: h_static = st.number_input("H static (m)", value=float(get_val("wall_hs", i, w_tot/25.0)), step=0.05, key=f"wall_hs_{i}")
+    
+    m_spc_val = 1.0
+    p_al_sys = 999.0
+    panel_width = 0.0
+    
+    if is_panel_sys:
+        if "Eco-form" in vert_system: 
+            panel_w_opts = [0.30, 0.45, 0.60, 0.75, 0.90, 1.05]
+            panel_width = st.selectbox("Select Panel Width (m)", panel_w_opts, index=get_idx("panel_w", i, panel_w_opts, 2), key=f"panel_w_{i}")
+            p_al_sys = ECO_FORM_ALLOW.get(element_subtype, {}).get(panel_width, 90.0)
+        elif "Tech-form" in vert_system: 
+            panel_w_opts = [0.30, 0.45, 0.60, 0.75, 0.90, 1.05]
+            panel_width = st.selectbox("Select Panel Width (m)", panel_w_opts, index=get_idx("panel_w", i, panel_w_opts, 2), key=f"panel_w_{i}")
+            p_al_sys = TECH_FORM_ALLOW.get(element_subtype, {}).get(panel_width, 80.0)
+        elif "Circular" in vert_system: 
+            p_al_sys = CIRCULAR_ALLOW.get(element_subtype, {}).get(0.30, 80.0)
+        elif "VMC" in vert_system: 
+            p_al_sys = 70.0
+        else: 
+            p_al_sys = 80.0
+        st.info(f"**Allowable Pressure for this Panel:** {p_al_sys} kN/m²")
+    
+    if not is_panel_sys:
+        p_th = "18.00 mm"
+        p_mal = 54.0
+        st.divider()
+        with st.container(border=True):
+            st.markdown("### 🪵 Secondary Beam")
+            col_s1, col_s2 = st.columns([1, 1.2])
+            with col_s1:
+                s_sec_opts = list(SECTIONS_DB.keys())
+                def_s = s_sec_opts.index("Timber H20") if "H20" in vert_system else s_sec_opts.index("Acrow Beam S12")
+                s_sec = st.selectbox("Sec Section", s_sec_opts, index=get_idx("wss", i, s_sec_opts, def_s), key=f"wss_{i}")
+                s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wssp", i, 0.31)), step=0.05, key=f"wssp_{i}")
+                
+                wsl1_opts = [0.0] + STD_LENGTHS.get(s_sec, [3.0])
+                wsl1_idx = get_idx("wsl1", i, wsl1_opts, len(wsl1_opts)-1 if s_sec in STD_LENGTHS else 1)
+                s_l1 = st.selectbox("Piece 1", wsl1_opts, index=wsl1_idx, key=f"wsl1_{i}")
+                
+                s_l2, s_l3 = 0.0, 0.0
+                if st.toggle("➕ Add Splicing (Pieces 2 & 3)", value=bool(get_val("ws_tog", i, False)), key=f"ws_tog_{i}"):
+                    s_l2 = st.selectbox("Piece 2", wsl1_opts, index=get_idx("wsl2", i, wsl1_opts, 0), key=f"wsl2_{i}")
+                    s_l3 = st.selectbox("Piece 3", wsl1_opts, index=get_idx("wsl3", i, wsl1_opts, 0), key=f"wsl3_{i}")
+                    
+                s_L = s_l1 + s_l2 + s_l3
+                if ("H20" in s_sec or "S12" in s_sec) and st.checkbox("Add 10cm to Total Length (Overlap)", value=bool(get_val("ws10_h", i, False)), key=f"ws10_h_{i}"): 
+                    s_L += 0.10
+                st.success(f"**Total Length = {s_L:.2f} m**")
+                
+                s_cl = st.number_input("L. Cant (m)", value=float(get_val("wscl", i, 0.50)), step=0.05, key=f"wscl_{i}")
+                s_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("wsspn", i, "1.30, 1.30")), key=f"wsspn_{i}")
+                
+                # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
+                s_spans_list = [float(x.strip()) for x in s_spns.split(',') if x.strip()]
+                s_cr = s_L - s_cl - sum(s_spans_list)
+                
+                if s_cr < -0.01: 
+                    st.error(f"❌ Error: Spans exceed total length!")
+                
+            with col_s2:
+                st.markdown("**Load Assignment & Interactive Sketch**")
+                is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
+                if is_hydro_s: 
+                    s_loads_data = generate_hydrostatic_loads(w_tot, h_static, s_L, s_spc)
+                else: 
+                    s_w_calc = w_tot * s_spc
+                    s_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": round(s_w_calc, 2), "WB (kN/m)": round(s_w_calc, 2), "LA (m) or X (m)": 0.0, "LB (m)": s_L}]
+                    
+                s_df = pd.DataFrame(s_loads_data)
+                s_loads_df = st.data_editor(
+                    s_df, num_rows="dynamic", hide_index=True, use_container_width=True, key=f"wsdf_{i}",
+                    column_config={"Load Type": st.column_config.SelectboxColumn("Load Type", options=["Linear", "Trapezoidal", "Point"], required=True)}
+                )
+                s_loads_parsed = parse_loads_from_df(s_loads_df)
+                s_supports = [s_cl] + [s_cl + sum(s_spans_list[:j+1]) for j in range(len(s_spans_list))]
+                
+                if s_L > 0 and s_cr >= -0.01: 
+                    c_pad1, c_img, c_pad2 = st.columns([1, 4, 1])
+                    with c_img: 
+                        s_sketch_bytes = draw_system_sketch(s_L, s_supports, s_loads_parsed, transparent_bg=True)
+                        st.image(s_sketch_bytes, use_container_width=True)
+                        
+                    if st.toggle("📊 Show Analysis Diagrams", key=f"tgl_diag_s_wall_{i}"):
+                        with st.spinner("Calculating..."):
+                            ws_img_bytes, _, _, _, _, _, _ = generate_acrow_diagrams(
+                                s_sec, s_L, s_supports, s_loads_parsed, SECTIONS_DB[s_sec]['E'], SECTIONS_DB[s_sec]['I'], 
+                                SECTIONS_DB[s_sec]['Mall'], SECTIONS_DB[s_sec]['Qall'], Rall=None, transparent_bg=True
+                            )
+                            col_dwn, img_col, _ = st.columns([1, 3, 1])
+                            with col_dwn: st.download_button("📥 PDF", convert_transparent_to_pdf_stream(ws_img_bytes), f"{s_sec}_Diagram.pdf", "application/pdf", key=f"dwn_s_wall_{i}")
+                            with img_col: st.image(ws_img_bytes, use_container_width=True)
+
+        st.divider()
+        with st.container(border=True):
+            st.markdown("### 🏗️ Main Beam" + ("" if is_single_sided else " & Tie Rod"))
+            col_m1, col_m2 = st.columns([1, 1.2])
+            with col_m1:
+                m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("wms", i, list(SECTIONS_DB.keys()), def_main), key=f"wms_{i}")
+                m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wmsp", i, 1.30)), step=0.05, key=f"wmsp_{i}")
+                m_spc_val = m_spc
+                m_w_calc = w_tot * m_spc
+                
+                wml1_opts = [0.0] + STD_LENGTHS.get(m_sec, [3.0])
+                wml1_idx = get_idx("wml1_w", i, wml1_opts, len(wml1_opts)-1 if m_sec in STD_LENGTHS else 1)
+                m_l1 = st.selectbox("Piece 1", wml1_opts, index=wml1_idx, key=f"wml1_w_{i}")
+                
+                m_l2, m_l3 = 0.0, 0.0
+                if st.toggle("➕ Add Splicing (Pieces 2 & 3)", value=bool(get_val("wm_tog_w", i, False)), key=f"wm_tog_w_{i}"):
+                    m_l2 = st.selectbox("Piece 2", wml1_opts, index=get_idx("wml2_w", i, wml1_opts, 0), key=f"wml2_w_{i}")
+                    m_l3 = st.selectbox("Piece 3", wml1_opts, index=get_idx("wml3_w", i, wml1_opts, 0), key=f"wml3_w_{i}")
+                    
+                m_L = m_l1 + m_l2 + m_l3
+                if "H20" in m_sec and st.checkbox("Add 10cm to Total Length (Overlap)", value=bool(get_val("wm10_h_w", i, False)), key=f"wm10_h_w_{i}"): 
+                    m_L += 0.10
+                st.success(f"**Total Length = {m_L:.2f} m**")
+                
+                m_cl = st.number_input("L. Cant (m)", value=float(get_val("wmcl_w", i, 0.50)), step=0.05, key=f"wmcl_w_{i}")
+                m_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("wmspn_w", i, "1.32, 1.32")), key=f"wmspn_w_{i}")
+                
+                # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
+                m_spans_list = [float(x.strip()) for x in m_spns.split(',') if x.strip()]
+                m_cr = m_L - m_cl - sum(m_spans_list)
+                
+                if m_cr < -0.01: 
+                    st.error(f"❌ Error: Spans exceed total length!")
+                    
+                if not is_single_sided: 
+                    t_nm = "Tie rod 15mm"
+                    st.text_input("Support Type", value=t_nm, disabled=True, key=f"wtn_{i}")
+                    t_al = st.number_input("Allowable (kN)", value=90.0, disabled=True, key=f"wta_{i}")
+                else: 
+                    t_nm = "Strongback Truss"
+                    t_al = 999.0
+                
+            with col_m2:
+                st.markdown("**Load Assignment & Interactive Sketch**")
+                is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
+                if is_hydro_m: 
+                    m_loads_data = generate_hydrostatic_loads(w_tot, h_static, m_L, m_spc)
+                else: 
+                    m_w_calc = w_tot * m_spc
+                    m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_calc, 2), "WB (kN/m)": round(m_w_calc, 2), "LA (m) or X (m)": 0.0, "LB (m)": m_L}]
+                    
+                m_df = pd.DataFrame(m_loads_data)
+                m_loads_df = st.data_editor(
+                    m_df, num_rows="dynamic", hide_index=True, use_container_width=True, key=f"wmdf_{i}",
+                    column_config={"Load Type": st.column_config.SelectboxColumn("Load Type", options=["Linear", "Trapezoidal", "Point"], required=True)}
+                )
+                m_loads_parsed = parse_loads_from_df(m_loads_df)
+                m_supports = [m_cl] + [m_cl + sum(m_spans_list[:j+1]) for j in range(len(m_spans_list))]
+                
+                if m_L > 0 and m_cr >= -0.01: 
+                    c_pad1, c_img, c_pad2 = st.columns([1, 4, 1])
+                    with c_img: 
+                        m_sketch_bytes = draw_system_sketch(m_L, m_supports, m_loads_parsed, transparent_bg=True)
+                        st.image(m_sketch_bytes, use_container_width=True)
+                        
+                    if st.toggle("📊 Show Analysis Diagrams", key=f"tgl_diag_m_wall_{i}"):
+                        with st.spinner("Calculating..."):
+                            wm_img_bytes, _, _, _, _, _, _ = generate_acrow_diagrams(
+                                m_sec, m_L, m_supports, m_loads_parsed, SECTIONS_DB[m_sec]['E'], SECTIONS_DB[m_sec]['I'], 
+                                SECTIONS_DB[m_sec]['Mall'], SECTIONS_DB[m_sec]['Qall'], Rall=t_al if not is_single_sided else None, transparent_bg=True
+                            )
+                            col_dwn, img_col, _ = st.columns([1, 3, 1])
+                            with col_dwn: st.download_button("📥 PDF", convert_transparent_to_pdf_stream(wm_img_bytes), f"{m_sec}_Diagram.pdf", "application/pdf", key=f"dwn_m_wall_{i}")
+                            with img_col: st.image(wm_img_bytes, use_container_width=True)
+
+    # =========================================================
+    # استدعاء ملفات الـ Modules المستقلة (السترونج باك والرياح)
+    # =========================================================
+    if is_single_sided: 
+        section_data['strongback'] = render_strongback_ui(i, w_tot, h_static, m_spc_val)
+        
+    st.divider()
+    if st.toggle("🌬️ Include Wind Load Analysis & Tilting Check", value=False, key=f"wind_tog_{i}"):
+        section_data['tilting'] = render_wind_tilting_ui(i, st.session_state.get(f"hp_{i}", h_static+0.5), w_tot)
+    
+    if is_panel_sys and not is_single_sided:
+        st.divider()
+        col_t, col_b = st.columns(2)
+        tie_h, tie_v, bolt_h, bolt_v = 0.0, 0.0, 0.0, 0.0
+        if vert_system != "Circular Steel Panel System":
+            with col_t:
+                st.markdown("#### 🔗 Tie Rod 15mm Configuration")
+                tie_h = st.number_input("Tie Rod Horiz. Spacing (m)", value=float(get_val("tie_h", i, 1.20)), step=0.05, key=f"tie_h_{i}")
+                tie_v = st.number_input("Tie Rod Vert. Spacing (m)", value=float(get_val("tie_v", i, 1.20)), step=0.05, key=f"tie_v_{i}")
+                st.info("**Tie Rod Allowable Load:** 90.00 kN")
+        with col_b:
+            st.markdown("#### 🔩 Acrow Bolts Configuration")
+            bolt_h = st.number_input("Bolt Horiz. Spacing (m)", value=float(get_val("bolt_h", i, 0.30)), step=0.05, key=f"bolt_h_{i}")
+            bolt_v = st.number_input("Bolt Vert. Spacing (m)", value=float(get_val("bolt_v", i, 1.20)), step=0.05, key=f"bolt_v_{i}")
+            st.info("**Bolt Allowable Tension/Shear:** 50.00 kN")
+        section_data.update({'tie_h': tie_h, 'tie_v': tie_v, 'bolt_h': bolt_h, 'bolt_v': bolt_v})
+
+    if not is_panel_sys:
+        section_data.update({
+            "cat": "vertical", "sub_cat": element_subtype, "sys_name": vert_system, "is_panel_system": False, 
+            "height": st.session_state.get(f"hp_{i}", h_static+0.5) if not is_single_sided else h_static, 
+            "w": w_tot, "ply_thick": p_th, "ply_mall": p_mal, "s_sec": s_sec, "s_spc": s_spc, "s_L": s_L, 
+            "s_cl": s_cl, "s_sp": s_spns, "s_cr": s_cr, "s_ld": s_loads_parsed, "s_sup": s_supports, 
+            "s_ld_img": s_sketch_bytes, "m_sec": m_sec, "m_spc": m_spc, "m_L": m_L, "m_cl": m_cl, 
+            "m_sp": m_spns, "m_cr": m_cr, "m_ld": m_loads_parsed, "m_sup": m_supports, 
+            "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al, "wall_pdf_curr": wall_pdf_curr
+        })
+    else:
+        section_data.update({
+            "cat": "vertical", "sub_cat": element_subtype, "sys_name": vert_system, "is_panel_system": True, 
+            "w": w_tot, "panel_w": panel_width, "panel_allowable": p_al_sys, "wall_pdf_curr": wall_pdf_curr, 
+            "height": st.session_state.get(f"hp_{i}", h_static+0.5) if not is_single_sided else h_static
+        })
+        
+    return section_data
