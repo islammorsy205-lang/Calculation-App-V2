@@ -6,7 +6,7 @@ import fitz
 import re
 from helpers import get_val, get_idx, convert_transparent_to_pdf_stream
 from config import SECTIONS_DB, STD_LENGTHS, SHORING_OPTIONS_SLAB, ECO_FORM_ALLOW, TECH_FORM_ALLOW, CIRCULAR_ALLOW
-from math_solver import parse_loads_from_df, generate_hydrostatic_loads, get_shoring_allowable
+from math_solver import parse_loads_from_df, generate_hydrostatic_loads, get_scaffold_allowable, get_prop_allowable
 from plot_core import draw_system_sketch, generate_acrow_diagrams
 
 # سيتم استدعاء الرياح والسترونج باك كملفات مستقلة تماماً داخل هذا الملف
@@ -126,17 +126,51 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             if m_cr < -0.01: 
                 st.error(f"❌ Error: Spans exceed total length!")
                 
+            # ==========================================
+            # الذكاء التدريجي في اختيار أحمال الشورينج
+            # ==========================================
             t_nm = st.selectbox("Shoring Type", SHORING_OPTIONS_SLAB, index=get_idx("tn", i, SHORING_OPTIONS_SLAB, 0), key=f"tn_{i}")
-            if t_nm == "Tie rod 15mm": 
-                t_al = st.number_input("Allowable (kN)", value=90.0, disabled=True, key=f"ta_auto_{i}")
-            elif t_nm in ["Shorebrace Frame", "Acrow Frame"]: 
-                t_al = st.number_input("Allowable (kN)", value=float(get_shoring_allowable(t_nm, 0)), disabled=True, key=f"ta_auto_{i}")
-            elif t_nm in ["Prop", "Other (Manual Input)"]: 
+            
+            if t_nm == "Shorebrace Frame":
+                st.info("✅ **Auto-Assigned:** Allowable Load = **54.40 kN / Leg**")
+                t_al = 54.40
+                
+            elif t_nm == "Acrow Frame":
+                st.info("✅ **Auto-Assigned:** Allowable Load = **22.25 kN / Leg**")
+                t_al = 22.25
+                
+            elif t_nm == "Cup-lock":
+                c_sup1, c_sup2 = st.columns(2)
+                subtype = c_sup1.selectbox("Steel Grade", ["S355 (st.52)", "S235"], key=f"cup_sub_{i}")
+                unbraced = c_sup2.number_input("Unbraced Length (Lcr) (m)", min_value=0.5, max_value=3.0, value=1.5, step=0.5, key=f"cup_unb_{i}")
+                t_al = get_scaffold_allowable("Cup-lock", subtype, unbraced)
+                st.info(f"✅ **Auto-Calculated Load:** {t_al:.2f} kN / Leg")
+                
+            elif t_nm == "Ring-lock":
+                c_sup1, c_sup2 = st.columns(2)
+                subtype = c_sup1.selectbox("Diameter", ["Ringlock 1.5\"", "Ringlock 2.0\""], key=f"ring_sub_{i}")
+                unbraced = c_sup2.number_input("Unbraced Length (Lcr) (m)", min_value=1.0, max_value=3.0, value=1.5, step=0.5, key=f"ring_unb_{i}")
+                t_al = get_scaffold_allowable("Ring-lock", subtype, unbraced)
+                st.info(f"✅ **Auto-Calculated Load:** {t_al:.2f} kN / Leg")
+                
+            elif t_nm == "Acrow Prop":
+                c_prop1, c_prop2, c_prop3 = st.columns([1.2, 1.5, 1])
+                req_ext = c_prop1.number_input("Prop Extension (m)", min_value=0.95, max_value=5.50, value=3.20, step=0.1, key=f"prop_ext_{i}")
+                
+                from config import PROP_DB
+                valid_props = [k for k, v in PROP_DB.items() if v['min'] <= req_ext <= v['max']]
+                if not valid_props:
+                    st.error("❌ No Acrow Prop fits this extension!")
+                    t_al = 0.0
+                else:
+                    sel_prop = c_prop2.selectbox("Select Valid Prop", valid_props, key=f"prop_sel_{i}")
+                    inner_up = c_prop3.toggle("Inner Tube UP?", value=True, key=f"prop_dir_{i}")
+                    
+                    t_al = get_prop_allowable(sel_prop, req_ext, inner_up)
+                    st.success(f"✅ **Capacity:** {t_al:.2f} kN")
+                    
+            else: # Other (Manual Input)
                 t_al = st.number_input("Allowable (kN)", value=float(get_val("ta_man", i, 20.0)), step=0.5, key=f"ta_man_{i}")
-            else:
-                unbraced_l = st.number_input("Unbraced Length (m)", min_value=0.5, max_value=3.0, value=float(get_val("unbraced", i, 1.5)), step=0.5, key=f"unbraced_{i}")
-                calc_al = get_shoring_allowable(t_nm, unbraced_l)
-                t_al = st.number_input("Allowable (kN)", value=float(calc_al) if calc_al else float(get_val("ta_fb", i, 30.0)), disabled=calc_al is not None, step=0.5, key=f"ta_auto_{i}_{unbraced_l}")
 
         with col_m2:
             st.markdown("**Load Assignment & Interactive Sketch**")
