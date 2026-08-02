@@ -46,7 +46,17 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             s_w_calc = w_tot * s_spc
             
             s_l1_opts = STD_LENGTHS.get(s_sec, [3.0])
-            s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(s_l1_opts[-1]), step=0.1, key=f"num_sL_{i}")
+            c_sl1, c_sl2 = st.columns([3, 1])
+            with c_sl2:
+                st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                cust_sL = st.checkbox("✏️ Custom", key=f"cust_sL_{i}")
+            
+            with c_sl1:
+                if cust_sL:
+                    s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(s_l1_opts[-1]), step=0.1, key=f"num_sL_{i}")
+                else:
+                    s_l1_idx = get_idx("sl1", i, s_l1_opts, len(s_l1_opts)-1 if s_sec in STD_LENGTHS else 0)
+                    s_L = st.selectbox("Total Length (m)", s_l1_opts, index=s_l1_idx, key=f"sl1_{i}")
             
             s_cl = st.number_input("L. Cant (m)", value=float(get_val("scl", i, 0.50)), step=0.05, key=f"scl_{i}")
             s_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("sspn", i, "1.30, 1.30")), key=f"sspn_{i}")
@@ -121,7 +131,6 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("ms", i, list(SECTIONS_DB.keys()), def_main), key=f"ms_{i}")
             
             m_spc_def = round(auto_m_spc, 3)
-            # دالة المزامنة الذكية: تحديث الـ Main Spacing فوراً عند تغيير الـ Secondary Spans
             if st.session_state.get(f"last_auto_msp_{i}") != m_spc_def:
                 st.session_state[f"msp_{i}"] = m_spc_def
                 st.session_state[f"last_auto_msp_{i}"] = m_spc_def
@@ -130,7 +139,17 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             m_w_calc = w_tot * m_spc
             
             m_l1_opts = STD_LENGTHS.get(m_sec, [3.0])
-            m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(m_l1_opts[-1]), step=0.1, key=f"num_mL_{i}")
+            c_ml1, c_ml2 = st.columns([3, 1])
+            with c_ml2:
+                st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                cust_mL = st.checkbox("✏️ Custom", key=f"cust_mL_{i}")
+            
+            with c_ml1:
+                if cust_mL:
+                    m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(m_l1_opts[-1]), step=0.1, key=f"num_mL_{i}")
+                else:
+                    m_l1_idx = get_idx("wml1", i, m_l1_opts, len(m_l1_opts)-1 if m_sec in STD_LENGTHS else 0)
+                    m_L = st.selectbox("Total Length (m)", m_l1_opts, index=m_l1_idx, key=f"wml1_{i}")
             
             m_cl = st.number_input("L. Cant (m)", value=float(get_val("mcl", i, 0.50)), step=0.05, key=f"mcl_{i}")
             m_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("mspn", i, "1.20")), key=f"mspn_{i}")
@@ -301,7 +320,17 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wssp", i, 0.310)), step=0.005, format="%.3f", key=f"wssp_{i}")
                 
                 wsl1_opts = STD_LENGTHS.get(s_sec, [3.0])
-                s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wsl1_opts[-1]), step=0.1, key=f"num_wsl1_{i}")
+                c_wsl1, c_wsl2 = st.columns([3, 1])
+                with c_wsl2:
+                    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                    cust_wsl = st.checkbox("✏️ Custom", key=f"cust_wsl_{i}")
+                
+                with c_wsl1:
+                    if cust_wsl:
+                        s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wsl1_opts[-1]), step=0.1, key=f"num_wsl1_{i}")
+                    else:
+                        wsl1_idx = get_idx("wsl1", i, wsl1_opts, len(wsl1_opts)-1 if s_sec in STD_LENGTHS else 0)
+                        s_L = st.selectbox("Total Length (m)", wsl1_opts, index=wsl1_idx, key=f"wsl1_{i}")
                 
                 s_cl = st.number_input("L. Cant (m)", value=float(get_val("wscl", i, 0.50)), step=0.05, key=f"wscl_{i}")
                 s_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("wsspn", i, "1.30, 1.30")), key=f"wsspn_{i}")
@@ -312,9 +341,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 if s_cr < -0.01: 
                     st.error(f"❌ Error: Spans exceed total length!")
                     
-                # ==============================================================
-                # العقل المفكر: حساب الـ Loaded Width الذكي للكمر الرئيسي للحوائط
-                # ==============================================================
                 auto_m_spc = 1.30
                 if len(s_spans_list) > 0:
                     trib_widths = [s_cl + s_spans_list[0] / 2.0]
@@ -365,7 +391,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("wms", i, list(SECTIONS_DB.keys()), def_main), key=f"wms_{i}")
                 
                 m_spc_def = round(auto_m_spc, 3)
-                # دالة المزامنة الذكية: تحديث الـ Main Spacing فوراً عند تغيير الـ Secondary Spans
                 if st.session_state.get(f"last_auto_wmsp_{i}") != m_spc_def:
                     st.session_state[f"wmsp_{i}"] = m_spc_def
                     st.session_state[f"last_auto_wmsp_{i}"] = m_spc_def
@@ -375,7 +400,17 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 m_w_calc = w_tot * m_spc
                 
                 wml1_opts = STD_LENGTHS.get(m_sec, [3.0])
-                m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wml1_opts[-1]), step=0.1, key=f"num_wml1_{i}")
+                c_wml1, c_wml2 = st.columns([3, 1])
+                with c_wml2:
+                    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                    cust_wml = st.checkbox("✏️ Custom", key=f"cust_wml_{i}")
+                
+                with c_wml1:
+                    if cust_wml:
+                        m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wml1_opts[-1]), step=0.1, key=f"num_wml1_{i}")
+                    else:
+                        wml1_idx = get_idx("wml1_w", i, wml1_opts, len(wml1_opts)-1 if m_sec in STD_LENGTHS else 0)
+                        m_L = st.selectbox("Total Length (m)", wml1_opts, index=wml1_idx, key=f"wml1_w_{i}")
                 
                 m_cl = st.number_input("L. Cant (m)", value=float(get_val("wmcl_w", i, 0.50)), step=0.05, key=f"wmcl_w_{i}")
                 m_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("wmspn_w", i, "1.32, 1.32")), key=f"wmspn_w_{i}")
