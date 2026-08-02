@@ -3,6 +3,7 @@
 import io
 import fitz
 from PIL import Image
+import numpy as np
 
 def get_val(key, i, default):
     import streamlit as st
@@ -32,8 +33,6 @@ def convert_transparent_to_pdf_stream(img_bytes):
     return pdf_bytes.getvalue()
 
 def crop_white_margins(img, tolerance=240):
-    import numpy as np
-    from PIL import Image
     img_data = np.array(img)
     if img_data.shape[2] == 4:
         alpha = img_data[:, :, 3]
@@ -48,6 +47,42 @@ def crop_white_margins(img, tolerance=240):
     y1, x1 = coords.max(axis=0) + 1
     return img.crop((x0, y0, x1, y1))
 
+# =========================================================
+# دوال استخراج الصور (تم استرجاعها ليعمل ملف ui_project.py بكفاءة)
+# =========================================================
+def extract_images_from_pdf(pdf_file):
+    images = []
+    try:
+        pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        for page_num in range(min(3, len(pdf_document))): 
+            page = pdf_document.load_page(page_num)
+            for img_index, img in enumerate(page.get_images(full=True)):
+                xref = img[0]
+                base_image = pdf_document.extract_image(xref)
+                images.append(base_image["image"])
+        pdf_file.seek(0)
+    except Exception:
+        pass
+    return images
+
+def get_best_image_match(images, keyword=None):
+    if not images: return None
+    best_img = None
+    max_size = 0
+    for img_bytes in images:
+        try:
+            img = Image.open(io.BytesIO(img_bytes))
+            size = img.width * img.height
+            if size > max_size:
+                max_size = size
+                best_img = img_bytes
+        except:
+            pass
+    return best_img
+
+# =========================================================
+# دالة فلترة النهايز (محدثة بالترتيب الذكي الجديد المطابق لطلبك)
+# =========================================================
 def get_valid_struts(L_req, mode="wind"):
     from config import STRUTS_DB
     valid = []
@@ -58,7 +93,7 @@ def get_valid_struts(L_req, mode="wind"):
     if not valid:
         return [f"No strut fits ({L_req:.2f}m)"]
     
-    # التعديل: ترتيب الفلترة ذكياً بناءً على طلبك
+    # الترتيب في حالة الـ Strongback (PPH ثم PPS)
     if mode == "strongback":
         def sort_key_sb(name):
             n_up = name.upper()
@@ -66,6 +101,8 @@ def get_valid_struts(L_req, mode="wind"):
             if "PPS" in n_up: return 1
             return 2
         valid.sort(key=sort_key_sb)
+        
+    # الترتيب في حالة الـ Wind Load (TILT UP/MPP ثم PPS ثم PPH)
     else:
         def sort_key_wind(name):
             n_up = name.upper()
