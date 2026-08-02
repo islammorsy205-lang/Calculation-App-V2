@@ -54,8 +54,9 @@ def draw_system_sketch(L_total, supports_x, loads, transparent_bg=False):
         if ld['type'] in ['linear', 'Trapezoidal']:
             h1 = beam_y + (ld['w1'] / max_w) * scale_h
             h2 = beam_y + (ld['w2'] / max_w) * scale_h
-            ax.add_patch(patches.Polygon([[ld['x1'], beam_y], [ld['x1'], h1], [ld['x2'], h2], [ld['x2'], beam_y]], closed=True, fill=False, hatch='||', edgecolor='black', linewidth=1))
-            ax.plot([ld['x1'], ld['x2']], [h1, h2], color='black', linewidth=1.5)
+            # التعديل: تغيير لون الحمل بالكامل إلى اللون الأزرق كما طلبت
+            ax.add_patch(patches.Polygon([[ld['x1'], beam_y], [ld['x1'], h1], [ld['x2'], h2], [ld['x2'], beam_y]], closed=True, fill=False, hatch='||', edgecolor='blue', linewidth=1))
+            ax.plot([ld['x1'], ld['x2']], [h1, h2], color='blue', linewidth=1.5)
             ax.text((ld['x1']+ld['x2'])/2, max(h1, h2) + 0.1, f"Load {idx+1}", ha='center', fontsize=9, color='black', fontweight='normal', fontname='Arial')
             ax.plot([ld['x1'], ld['x2']], [beam_y + scale_h + 0.5, beam_y + scale_h + 0.5], color='#3399FF', linewidth=0.8)
             ax.plot([ld['x1'], ld['x1']], [beam_y, beam_y + scale_h + 0.55], color='#3399FF', linewidth=0.5, linestyle='--')
@@ -412,17 +413,18 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
             if w1 > 0 or w2 > 0:
                 hw1, hw2 = w1*sc, w2*sc
                 if w_dir == 'right':
-                    ax.add_patch(patches.Polygon([[0, y1], [-hw1, y1], [-hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='black', lw=0.8))
+                    # التعديل: تغيير لون الحمل بالكامل إلى اللون الأزرق في رسومات الـ SAP أيضاً
+                    ax.add_patch(patches.Polygon([[0, y1], [-hw1, y1], [-hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.8))
                     for y_arr in np.linspace(y1, y2, 5):
                         w_arr = w1 + (w2-w1)*(y_arr-y1)/(y2-y1) if y2 > y1 else w1
-                        ax.arrow(-w_arr*sc, y_arr, w_arr*sc - 0.05, 0, head_width=0.104, head_length=0.065, fc='black', ec='black', lw=0.5)
+                        ax.arrow(-w_arr*sc, y_arr, w_arr*sc - 0.05, 0, head_width=0.104, head_length=0.065, fc='blue', ec='blue', lw=0.5)
                     ax.text(-hw1, y1, f"{w1:.1f}", color='black', ha='right', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
                     if abs(y2 - y1) > 0.1: ax.text(-hw2, y2, f"{w2:.1f}", color='black', ha='right', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
                 else:
-                    ax.add_patch(patches.Polygon([[0, y1], [hw1, y1], [hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='black', lw=0.8))
+                    ax.add_patch(patches.Polygon([[0, y1], [hw1, y1], [hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.8))
                     for y_arr in np.linspace(y1, y2, 5):
                         w_arr = w1 + (w2-w1)*(y_arr-y1)/(y2-y1) if y2 > y1 else w1
-                        ax.arrow(w_arr*sc, y_arr, -w_arr*sc + 0.05, 0, head_width=0.104, head_length=0.065, fc='black', ec='black', lw=0.5)
+                        ax.arrow(w_arr*sc, y_arr, -w_arr*sc + 0.05, 0, head_width=0.104, head_length=0.065, fc='blue', ec='blue', lw=0.5)
                     ax.text(hw1, y1, f"{w1:.1f}", color='black', ha='left', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
                     if abs(y2 - y1) > 0.1: ax.text(hw2, y2, f"{w2:.1f}", color='black', ha='left', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
 
