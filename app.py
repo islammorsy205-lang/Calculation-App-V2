@@ -387,15 +387,23 @@ if generate_doc_btn:
                     add_heading_14(doc, f"{chk_counter}. Plywood {conf['ply_thick']}:")
                     add_eq(doc, f"W_plywood = {conf['w']:.2f} KN/m²")
                     add_eq(doc, f"Max Spacing = {conf['s_spc']} m\n")
+                    
+                    # التعديل: إضافة نص التحقق من العزوم
+                    add_eq(doc, "Check for moment:", bold=True)
                     M_ply = (conf['w'] * (conf['s_spc']**2)) / 10
                     Z_req = (M_ply * 100) / 3.41
                     add_eq(doc, f"M = W * L² / 10 = {conf['w']:.2f} * ({conf['s_spc']})² / 10 = {M_ply:.2f} KN.m")
                     add_eq(doc, f"Z_req = M * 100 / 3.41 = {M_ply:.2f} * 100 / 3.41 = {Z_req:.2f} cm³")
                     add_word_check(doc, None, Z_req, conf['ply_mall'], "cm³")
+                    
                     E_ply, I_ply = (74.52, 48.60) if "18" in conf['ply_thick'] else (74.52, 77.0)
                     D_ply = (0.0068 * conf['w'] * (conf['s_spc']*100)**4) / (100 * E_ply * I_ply)
                     all_ply_d = (conf['s_spc']*1000)/300
-                    add_eq(doc, f"\nD = 0.0068 * W * L⁴ / (E * I) = 0.0068 * {conf['w']:.2f} * ({conf['s_spc']*100:.1f})⁴ / (100 * {E_ply:.2f} * {I_ply:.1f}) = {D_ply:.2f} mm")
+                    
+                    # التعديل: إضافة نص التحقق من الترخيم
+                    doc.add_paragraph()
+                    add_eq(doc, "Check for deflection:", bold=True)
+                    add_eq(doc, f"D = 0.0068 * W * L⁴ / (E * I) = 0.0068 * {conf['w']:.2f} * ({conf['s_spc']*100:.1f})⁴ / (100 * {E_ply:.2f} * {I_ply:.1f}) = {D_ply:.2f} mm")
                     add_word_check(doc, None, D_ply, all_ply_d, "mm", f"Allowable = L/300 = {all_ply_d:.2f} mm")
                     
                     chk_counter += 1
@@ -672,7 +680,8 @@ if generate_doc_btn:
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
 
             # --- التعديل هنا: داتا شيت الهيلتي مباشرة بدون Banner أو Border ---
-            if os.path.exists("Hilti_Bolt.pdf"):
+            # تظهر فقط في حالة الحوائط أو الأعمدة (Vertical)
+            if "Vertical" in sys_cat and os.path.exists("Hilti_Bolt.pdf"):
                 doc.add_page_break()
                 append_pdf_stream_to_word("Hilti_Bolt.pdf", doc, is_path=True, max_width_cm=17.5, max_height_cm=24.0, add_border=False)
                 
