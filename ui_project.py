@@ -17,7 +17,8 @@ def render_project_details():
         contractor = st.text_input("Client / Contractor", "Main Contractor")
 
     with col2: 
-        calc_subject = st.text_input("Structure Element", "CALCULATION SHEET FOR ")
+        # تم تغيير القيمة الافتراضية لتتناسب مع التمبلت الجديد
+        calc_subject = st.text_input("Structure Element", "Solid Slab")
         system_name = st.selectbox(
             "Formwork System Name", 
             SHORING_OPTIONS_SLAB + [
