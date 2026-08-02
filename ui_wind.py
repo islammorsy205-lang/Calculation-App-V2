@@ -71,14 +71,23 @@ def render_wind_tilting_ui(i, h_panel, w_tot):
                 num_props = st.radio("Number of Push-Pulls:", [2, 3], key=f"rb_num_props_{i}", horizontal=True)
                 struts_conf = []
                 col_g1, col_g2 = st.columns(2)
+                # دالة المزامنة الذكية: أي تغيير في X2 يُطبق فوراً على X1
+                def sync_x1():
+                    st.session_state[f"x1_{i}"] = st.session_state[f"x2_{i}"]
+
+                # أمر إجباري لمرة واحدة لمسح الكاش القديم وتطبيق التوحيد
+                if f"sync_forced_{i}" not in st.session_state:
+                    st.session_state[f"x1_{i}"] = st.session_state.get(f"x2_{i}", 2.31)
+                    st.session_state[f"sync_forced_{i}"] = True
+
                 with col_g1:
                     y1 = st.number_input("Y1 (m)", value=0.50, key=f"y1_{i}", step=0.05)
                     y2 = st.number_input("Y2 (m)", value=4.00, key=f"y2_{i}", step=0.05)
                     y3 = st.number_input("Y3 (m)", value=6.67, key=f"y3_{i}", step=0.05) if num_props == 3 else 0.0
                 with col_g2:
-                    default_x2 = st.session_state.get(f"x2_{i}", 2.31)
-                    x1 = st.number_input("X1 (m)", value=float(default_x2), key=f"x1_{i}", step=0.05)
-                    x2 = st.number_input("X2 (m)", value=2.31, key=f"x2_{i}", step=0.05)
+                    x1 = st.number_input("X1 (m)", value=2.31, key=f"x1_{i}", step=0.05)
+                    # إضافة on_change لتحديث X1 أوتوماتيكياً عند تعديل X2
+                    x2 = st.number_input("X2 (m)", value=2.31, key=f"x2_{i}", step=0.05, on_change=sync_x1)
                     x3 = st.number_input("X3 (m)", value=3.85, key=f"x3_{i}", step=0.05) if num_props == 3 else 0.0
                 
                 l1_req = np.hypot(x1, y1)
