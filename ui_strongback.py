@@ -86,7 +86,6 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             for x in x_ns:
                 if x > 0: nodes.append([x, 0.0, base_supports[x]['fix_x'], base_supports[x]['fix_y'], base_supports[x]['fix_r']])
                     
-            nodes.append([-1.0, -1.0, True, True, True]) 
             corner_fx = True if corner_sup == "Hinged" else False
             nodes[0][2], nodes[0][3], nodes[0][4] = corner_fx, True, False 
             
@@ -101,7 +100,7 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                 
             for d in diags: els.append({'n1': get_n(0, d['y']), 'n2': get_n(d['x'], 0), 'sec': d['type'].split()[0], 'mem': 'D', 'type': 'truss'})
                 
-            els.append({'n1': get_n(0, 0), 'n2': get_n(-1, -1), 'sec': 'Tie', 'mem': 'Tie', 'type': 'truss'})
+            # تم حذف عنصر الزرجينة الوهمي للسماح للركيزة باستقبال الـ Reaction الطبيعي المطابق لـ SAP2000
             
             R_tot, U = solve_fea(nodes, els, sb_custom_loads, sb_dist_loads)
             
@@ -115,11 +114,15 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             y_vals = sorted([nodes[idx][1] for idx in v_nodes_idx])
             allw_def_v = ((max(np.diff(y_vals)) if len(y_vals)>1 else sb_Lv) * 1000) / 400.0
             
-            # التعديل الجذري: سحب قوة الـ Tension الحقيقية المباشرة من عنصر الزرجينة بدلاً من محصلة الـ Reactions
-            tie_el = next((e for e in els if e['mem'] == 'Tie'), None)
-            tie_force_total = abs(tie_el['N_ax']) if tie_el else 0.0
+            # التعديل الجذري: سحب الـ Axial Reaction (Vertical) مباشرة من الركيزة 
+            corner_idx = get_n(0, 0)
+            if corner_idx != -1:
+                base_axial_reaction = abs(R_tot[3 * corner_idx + 1])
+            else:
+                base_axial_reaction = 0.0
+                
+            tie_force_total = base_axial_reaction
             tie_force_single = tie_force_total / 2.0
-            waler_R = tie_force_total
             waler_M = (tie_force_single * tie_h) / 4.0
             
             max_diag_force = max([abs(e['N_ax']) for e in els if e['type'] == 'truss' and e['mem'] == 'D'] + [0])
