@@ -86,8 +86,13 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             for x in x_ns:
                 if x > 0: nodes.append([x, 0.0, base_supports[x]['fix_x'], base_supports[x]['fix_y'], base_supports[x]['fix_r']])
                     
-            corner_fx = True if corner_sup == "Hinged" else False
-            nodes[0][2], nodes[0][3], nodes[0][4] = corner_fx, True, False 
+            nodes.append([-1.0, -1.0, True, True, True]) 
+            corner_is_hinged = (corner_sup == "Hinged")
+            
+            if corner_is_hinged:
+                nodes[0][2], nodes[0][3], nodes[0][4] = True, True, False 
+            else:
+                nodes[0][2], nodes[0][3], nodes[0][4] = False, False, False 
             
             def get_n(x, y): return next((j for j, n in enumerate(nodes) if abs(n[0]-x)<1e-3 and abs(n[1]-y)<1e-3), -1)
                 
@@ -100,6 +105,9 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                 
             for d in diags: els.append({'n1': get_n(0, d['y']), 'n2': get_n(d['x'], 0), 'sec': d['type'].split()[0], 'mem': 'D', 'type': 'truss'})
                 
+            if not corner_is_hinged:
+                els.append({'n1': get_n(0, 0), 'n2': get_n(-1, -1), 'sec': 'Tie', 'mem': 'Tie', 'type': 'truss'})
+            
             R_tot, U = solve_fea(nodes, els, sb_custom_loads, sb_dist_loads)
             
             max_M_v = max([max(abs(el['M'])) for el in els if el['mem']=='V'] + [0])
@@ -116,15 +124,17 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             # التعديل الجذري: سحب الـ Rx و Ry وتحليلهم لـ 45 درجة (المتطابق مع صورتك 27.87)
             # =========================================================================
             corner_idx = get_n(0, 0)
-            if corner_idx != -1:
-                rx_corner = R_tot[3 * corner_idx]
-                ry_corner = R_tot[3 * corner_idx + 1]
-                # حساب القوة المحورية في اتجاه 45 درجة
-                base_axial_reaction = abs(rx_corner) * np.cos(np.radians(45)) + abs(ry_corner) * np.sin(np.radians(45))
+            if corner_is_hinged:
+                if corner_idx != -1:
+                    rx_corner = R_tot[3 * corner_idx]
+                    ry_corner = R_tot[3 * corner_idx + 1]
+                    tie_force_total = abs(rx_corner * 0.70710678 + ry_corner * 0.70710678)
+                else:
+                    tie_force_total = 0.0
             else:
-                base_axial_reaction = 0.0
+                tie_el = next((e for e in els if e['mem'] == 'Tie'), None)
+                tie_force_total = abs(tie_el['N_ax']) if tie_el else 0.0
                 
-            tie_force_total = base_axial_reaction
             tie_force_single = tie_force_total / 2.0
             waler_M = (tie_force_single * tie_h) / 4.0
             
@@ -150,7 +160,9 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                 img_ax_bytes = draw_sap_axial_single(nodes, els, sc_ax)
                 img_sh_bytes = draw_sap_shear_single(nodes, els, sc_sh)
                 img_mo_bytes = draw_sap_moment_single(nodes, els, sc_mo)
-                img_rx_bytes = draw_sap_rxn_single(nodes, els, R_tot)
+                
+                # تمرير حالة الـ Support لدالة رسم الـ Reactions
+                img_rx_bytes = draw_sap_rxn_single(nodes, els, R_tot, corner_sup)
                 
                 sb_dict.update({
                     'img_ld_single': img_ld_bytes, 'img_ax_single': img_ax_bytes,
@@ -175,7 +187,8 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                     st.image(img_rx_bytes, caption="Reactions", use_container_width=True)
                     st.download_button("📥 PDF", convert_transparent_to_pdf_stream(img_rx_bytes), "Reactions.pdf", key=f"dl_rx_{i}")
                 
-                s2k_data = generate_s2k_file(nodes, els, sb_custom_loads, sb_dist_loads)
+                # تمرير حالة الـ Support لملف الساب
+                s2k_data = generate_s2k_file(nodes, els, sb_custom_loads, sb_dist_loads, corner_sup)
                 st.download_button("📥 Export S2K", data=s2k_data, file_name=f"Strongback_System_{i+1}.s2k", mime="text/plain", key=f"s2k_sb_{i}")
                 
         else: 
