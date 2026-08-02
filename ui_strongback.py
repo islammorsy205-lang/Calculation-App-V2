@@ -15,7 +15,6 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
-            # التعديل: السماح بـ 3 أرقام عشرية
             sb_spc = st.number_input("Strongback Spacing (m)", value=float(m_spc_val), step=0.005, format="%.3f", key=f"sb_spc_{i}")
             w1_base = w_tot * sb_spc
             st.info(f"**Hydrostatic Base Load:** {w1_base:.2f} kN/m'")
@@ -102,7 +101,7 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                 
             for d in diags: els.append({'n1': get_n(0, d['y']), 'n2': get_n(d['x'], 0), 'sec': d['type'].split()[0], 'mem': 'D', 'type': 'truss'})
                 
-            els.append({'n1': get_n(0, 0), 'n2': get_n(-1, -1), 'sec': 'Solid', 'mem': 'Tie', 'type': 'truss'})
+            els.append({'n1': get_n(0, 0), 'n2': get_n(-1, -1), 'sec': 'Tie', 'mem': 'Tie', 'type': 'truss'})
             
             R_tot, U = solve_fea(nodes, els, sb_custom_loads, sb_dist_loads)
             
@@ -116,19 +115,19 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             y_vals = sorted([nodes[idx][1] for idx in v_nodes_idx])
             allw_def_v = ((max(np.diff(y_vals)) if len(y_vals)>1 else sb_Lv) * 1000) / 400.0
             
-            corner_idx = get_n(0, 0)
-            rx_corner, ry_corner = R_tot[3 * corner_idx], R_tot[3 * corner_idx + 1]
-            axial_45 = rx_corner * np.cos(np.radians(-45)) + ry_corner * np.sin(np.radians(-45))
-            
-            tie_force_total = abs(axial_45)
+            # التعديل الجذري: سحب قوة الـ Tension الحقيقية المباشرة من عنصر الزرجينة بدلاً من محصلة الـ Reactions
+            tie_el = next((e for e in els if e['mem'] == 'Tie'), None)
+            tie_force_total = abs(tie_el['N_ax']) if tie_el else 0.0
             tie_force_single = tie_force_total / 2.0
+            waler_R = tie_force_total
             waler_M = (tie_force_single * tie_h) / 4.0
+            
             max_diag_force = max([abs(e['N_ax']) for e in els if e['type'] == 'truss' and e['mem'] == 'D'] + [0])
             
             sb_dict.update({
                 'active': True, 'spc': sb_spc, 'Lv': sb_Lv, 'Lh': sb_Lh, 'w': w1_base, 'sv': sb_sv, 'sh': sb_sh, 'diags': diags,
                 'M_v': max_M_v, 'V_v': max_V_v, 'D_v': max_def_v, 'allw_D_v': allw_def_v, 'M_h': max_M_h, 'V_h': max_V_h, 
-                'tie_T_single': tie_force_single, 'waler_sec': sb_waler_sec, 'waler_M': waler_M, 'tie_h': tie_h,
+                'tie_T_single': tie_force_single, 'tie_force_total': tie_force_total, 'waler_sec': sb_waler_sec, 'waler_M': waler_M, 'tie_h': tie_h,
                 'max_diag_force': max_diag_force, 'elements': els
             })
 
