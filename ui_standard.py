@@ -67,9 +67,6 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             if s_cr < -0.01: 
                 st.error(f"❌ Error: Spans exceed total length!")
                 
-            # ==============================================================
-            # العقل المفكر: حساب الـ Loaded Width الذكي للكمر الرئيسي بدقة تامة
-            # ==============================================================
             auto_m_spc = 1.10
             if element_type == "Beam":
                 auto_m_spc = b_width if beam_pos == "Edge" else b_width / 2.0
@@ -131,7 +128,6 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("ms", i, list(SECTIONS_DB.keys()), def_main), key=f"ms_{i}")
             
             m_spc_def = round(auto_m_spc, 3)
-            # تحديث الـ Main Spacing فوراً عند تغيير الـ Secondary Spans
             if st.session_state.get(f"last_auto_msp_{i}") != m_spc_def:
                 st.session_state[f"msp_{i}"] = m_spc_def
                 st.session_state[f"last_auto_msp_{i}"] = m_spc_def
@@ -163,6 +159,9 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                 
             t_nm = st.selectbox("Shoring Type", SHORING_OPTIONS_SLAB, index=get_idx("tn", i, SHORING_OPTIONS_SLAB, 0), key=f"tn_{i}")
             
+            t_sub = ""
+            t_unb = 0.0
+
             if t_nm == "Shorebrace Frame":
                 st.info("✅ **Auto-Assigned:** Allowable Load = **54.40 kN / Leg**")
                 t_al = 54.40
@@ -177,6 +176,8 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                 unbraced = c_sup2.number_input("Unbraced Length (Lcr) (m)", min_value=0.5, max_value=3.0, value=1.5, step=0.5, key=f"cup_unb_{i}")
                 t_al = get_scaffold_allowable("Cup-lock", subtype, unbraced)
                 st.info(f"✅ **Auto-Calculated Load:** {t_al:.2f} kN / Leg")
+                t_sub = subtype
+                t_unb = unbraced
                 
             elif t_nm == "Ring-lock":
                 c_sup1, c_sup2 = st.columns(2)
@@ -184,6 +185,8 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                 unbraced = c_sup2.number_input("Unbraced Length (Lcr) (m)", min_value=1.0, max_value=3.0, value=1.5, step=0.5, key=f"ring_unb_{i}")
                 t_al = get_scaffold_allowable("Ring-lock", subtype, unbraced)
                 st.info(f"✅ **Auto-Calculated Load:** {t_al:.2f} kN / Leg")
+                t_sub = subtype
+                t_unb = unbraced
                 
             elif t_nm == "Acrow Prop":
                 c_prop1, c_prop2, c_prop3 = st.columns([1.2, 1.5, 1])
@@ -200,6 +203,7 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                     
                     t_al = get_prop_allowable(sel_prop, req_ext, inner_up)
                     st.success(f"✅ **Capacity:** {t_al:.2f} kN")
+                    t_sub = sel_prop
                     
             else:
                 t_al = st.number_input("Allowable (kN)", value=float(get_val("ta_man", i, 20.0)), step=0.5, key=f"ta_man_{i}")
@@ -242,7 +246,7 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
         "s_cl": s_cl, "s_sp": s_spns, "s_cr": s_cr, "s_ld": s_loads_parsed, "s_sup": s_supports, 
         "s_ld_img": s_sketch_bytes, "m_sec": m_sec, "m_spc": m_spc, "m_L": m_L, "m_cl": m_cl, 
         "m_sp": m_spns, "m_cr": m_cr, "m_ld": m_loads_parsed, "m_sup": m_supports, 
-        "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al
+        "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al, "t_sub": t_sub, "t_unb": t_unb
     }
 
 def render_vertical_element(i, element_subtype, def_sec, def_main):
@@ -342,9 +346,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 if s_cr < -0.01: 
                     st.error(f"❌ Error: Spans exceed total length!")
                     
-                # ==============================================================
-                # العقل المفكر: حساب الـ Loaded Width الذكي للكمر الرئيسي للحوائط
-                # ==============================================================
                 auto_m_spc = 1.30
                 if len(s_spans_list) > 0:
                     trib_widths = [s_cl + s_spans_list[0] / 2.0]
