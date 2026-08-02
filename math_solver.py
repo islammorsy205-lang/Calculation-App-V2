@@ -15,11 +15,36 @@ def get_kz(z, exp):
 def parse_loads_from_df(df):
     parsed = []
     for _, row in df.iterrows():
-        l_type = row.get("Load Type", "Linear")
-        wa = float(row.get("WA (kN/m) or P (kN)", 0))
-        wb = float(row.get("WB (kN/m)", wa))
-        la = float(row.get("LA (m) or X (m)", 0))
-        lb = float(row.get("LB (m)", la))
+        l_type = str(row.get("Load Type", "Linear")).strip()
+
+        # دالة ذكية لمنع انهيار البرنامج عند وجود خلايا فارغة أو مسافات
+        def safe_float(val, default=0.0):
+            if pd.isna(val) or val is None:
+                return float(default)
+            v_str = str(val).strip().lower()
+            if v_str in ['none', 'nan', '', 'null']:
+                return float(default)
+            try:
+                return float(val)
+            except ValueError:
+                return float(default)
+
+        wa = safe_float(row.get("WA (kN/m) or P (kN)", 0))
+        
+        wb_raw = row.get("WB (kN/m)", None)
+        if pd.isna(wb_raw) or wb_raw is None or str(wb_raw).strip().lower() in ['none', 'nan', '', 'null']:
+            wb = wa
+        else:
+            wb = safe_float(wb_raw, wa)
+            
+        la = safe_float(row.get("LA (m) or X (m)", 0))
+        
+        lb_raw = row.get("LB (m)", None)
+        if pd.isna(lb_raw) or lb_raw is None or str(lb_raw).strip().lower() in ['none', 'nan', '', 'null']:
+            lb = la
+        else:
+            lb = safe_float(lb_raw, la)
+
         if l_type == "Point":
             parsed.append({'type': 'point', 'p': wa, 'x': la})
         else:
@@ -230,7 +255,7 @@ def solve_fea(nodes, elements, custom_loads, dist_loads):
                 n1, n2 = el['n1'], el['n2']
                 ny1, ny2 = nodes[n1][1], nodes[n2][1]
                 L = abs(ny2 - ny1)
-                ymin, ymax = min(ny1, ny2), max(ny1, ny2)
+                ymin, ymax = min(ny1, ny2), max(ny1, max(ny1, ny2))
                 overlap_y1 = max(y1, ymin)
                 overlap_y2 = min(y2, ymax)
                 if overlap_y2 > overlap_y1 + 1e-3:
