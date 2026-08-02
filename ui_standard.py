@@ -42,17 +42,28 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
         col_s1, col_s2 = st.columns([1, 1.2])
         with col_s1:
             s_sec = st.selectbox("Sec Section", list(SECTIONS_DB.keys()), index=get_idx("ss", i, list(SECTIONS_DB.keys()), def_sec), key=f"ss_{i}")
-            s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("ssp", i, 0.35)), step=0.05, key=f"ssp_{i}")
+            # التعديل: السماح بـ 3 أرقام عشرية في الـ Spacing
+            s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("ssp", i, 0.350)), step=0.005, format="%.3f", key=f"ssp_{i}")
             s_w_calc = w_tot * s_spc
             
-            # خانة طول مباشر ونظيف تماماً
             s_l1_opts = STD_LENGTHS.get(s_sec, [3.0])
-            s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(s_l1_opts[-1]), step=0.1, key=f"num_sL_{i}")
+            c_sl1, c_sl2 = st.columns([3, 1])
+            with c_sl2:
+                st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                cust_sL = st.checkbox("✏️ Custom", key=f"cust_sL_{i}")
+            
+            if cust_sL:
+                with c_sl1:
+                    s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(s_l1_opts[-1]), step=0.1, key=f"num_sL_{i}")
+            else:
+                with c_sl1:
+                    s_l1_idx = get_idx("sl1", i, s_l1_opts, len(s_l1_opts)-1 if s_sec in STD_LENGTHS else 0)
+                    s_L = st.selectbox("Total Length (m)", s_l1_opts, index=s_l1_idx, key=f"sl1_{i}")
+                st.success(f"**Total Length = {s_L:.2f} m**")
             
             s_cl = st.number_input("L. Cant (m)", value=float(get_val("scl", i, 0.50)), step=0.05, key=f"scl_{i}")
             s_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("sspn", i, "1.30, 1.30")), key=f"sspn_{i}")
             
-            # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
             s_spans_list = [float(x.strip()) for x in s_spns.split(',') if x.strip()]
             s_cr = s_L - s_cl - sum(s_spans_list)
             
@@ -107,26 +118,34 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
         with col_m1:
             m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("ms", i, list(SECTIONS_DB.keys()), def_main), key=f"ms_{i}")
             m_spc_def = b_width if beam_pos == "Edge" else b_width/2.0 if element_type == "Beam" else 1.10
-            m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val(f"msp_{beam_pos}", i, m_spc_def)), step=0.05, key=f"msp_{i}")
+            # التعديل: السماح بـ 3 أرقام عشرية في الـ Spacing
+            m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val(f"msp_{beam_pos}", i, m_spc_def)), step=0.005, format="%.3f", key=f"msp_{i}")
             m_w_calc = w_tot * m_spc
             
-            # خانة طول مباشر ونظيف تماماً
             m_l1_opts = STD_LENGTHS.get(m_sec, [3.0])
-            m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(m_l1_opts[-1]), step=0.1, key=f"num_mL_{i}")
+            c_ml1, c_ml2 = st.columns([3, 1])
+            with c_ml2:
+                st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                cust_mL = st.checkbox("✏️ Custom", key=f"cust_mL_{i}")
+            
+            if cust_mL:
+                with c_ml1:
+                    m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(m_l1_opts[-1]), step=0.1, key=f"num_mL_{i}")
+            else:
+                with c_ml1:
+                    m_l1_idx = get_idx("wml1", i, m_l1_opts, len(m_l1_opts)-1 if m_sec in STD_LENGTHS else 0)
+                    m_L = st.selectbox("Total Length (m)", m_l1_opts, index=m_l1_idx, key=f"wml1_{i}")
+                st.success(f"**Total Length = {m_L:.2f} m**")
             
             m_cl = st.number_input("L. Cant (m)", value=float(get_val("mcl", i, 0.50)), step=0.05, key=f"mcl_{i}")
             m_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("mspn", i, "1.20")), key=f"mspn_{i}")
             
-            # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
             m_spans_list = [float(x.strip()) for x in m_spns.split(',') if x.strip()]
             m_cr = m_L - m_cl - sum(m_spans_list)
             
             if m_cr < -0.01: 
                 st.error(f"❌ Error: Spans exceed total length!")
                 
-            # ==========================================
-            # الذكاء التدريجي في اختيار أحمال الشورينج
-            # ==========================================
             t_nm = st.selectbox("Shoring Type", SHORING_OPTIONS_SLAB, index=get_idx("tn", i, SHORING_OPTIONS_SLAB, 0), key=f"tn_{i}")
             
             if t_nm == "Shorebrace Frame":
@@ -167,7 +186,7 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                     t_al = get_prop_allowable(sel_prop, req_ext, inner_up)
                     st.success(f"✅ **Capacity:** {t_al:.2f} kN")
                     
-            else: # Other (Manual Input)
+            else:
                 t_al = st.number_input("Allowable (kN)", value=float(get_val("ta_man", i, 20.0)), step=0.5, key=f"ta_man_{i}")
 
         with col_m2:
@@ -258,17 +277,18 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
     p_al_sys = 999.0
     panel_width = 0.0
     
+    # =======================================================
+    # برمجة قيم البانلات الذكية (Tech-form, VMC, Circular)
+    # =======================================================
     if is_panel_sys:
         if "Eco-form" in vert_system: 
             panel_w_opts = [0.30, 0.45, 0.60, 0.75, 0.90, 1.05]
             panel_width = st.selectbox("Select Panel Width (m)", panel_w_opts, index=get_idx("panel_w", i, panel_w_opts, 2), key=f"panel_w_{i}")
             p_al_sys = ECO_FORM_ALLOW.get(element_subtype, {}).get(panel_width, 90.0)
         elif "Tech-form" in vert_system: 
-            panel_w_opts = [0.30, 0.45, 0.60, 0.75, 0.90, 1.05]
-            panel_width = st.selectbox("Select Panel Width (m)", panel_w_opts, index=get_idx("panel_w", i, panel_w_opts, 2), key=f"panel_w_{i}")
-            p_al_sys = TECH_FORM_ALLOW.get(element_subtype, {}).get(panel_width, 80.0)
+            p_al_sys = 80.0 if element_subtype == "Wall" else 100.0
         elif "Circular" in vert_system: 
-            p_al_sys = CIRCULAR_ALLOW.get(element_subtype, {}).get(0.30, 80.0)
+            p_al_sys = 150.0
         elif "VMC" in vert_system: 
             p_al_sys = 70.0
         else: 
@@ -286,16 +306,28 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 s_sec_opts = list(SECTIONS_DB.keys())
                 def_s = s_sec_opts.index("Timber H20") if "H20" in vert_system else s_sec_opts.index("Acrow Beam S12")
                 s_sec = st.selectbox("Sec Section", s_sec_opts, index=get_idx("wss", i, s_sec_opts, def_s), key=f"wss_{i}")
-                s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wssp", i, 0.31)), step=0.05, key=f"wssp_{i}")
+                # التعديل: السماح بـ 3 أرقام عشرية
+                s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wssp", i, 0.310)), step=0.005, format="%.3f", key=f"wssp_{i}")
                 
-                # خانة طول مباشر ونظيف تماماً
                 wsl1_opts = STD_LENGTHS.get(s_sec, [3.0])
-                s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wsl1_opts[-1]), step=0.1, key=f"num_wsl1_{i}")
+                c_wsl1, c_wsl2 = st.columns([3, 1])
+                with c_wsl2:
+                    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                    cust_wsl = st.checkbox("✏️ Custom", key=f"cust_wsl_{i}")
+                
+                if cust_wsl:
+                    with c_wsl1:
+                        s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wsl1_opts[-1]), step=0.1, key=f"num_wsl1_{i}")
+                else:
+                    with c_wsl1:
+                        wsl1_idx = get_idx("wsl1", i, wsl1_opts, len(wsl1_opts)-1 if s_sec in STD_LENGTHS else 0)
+                        s_l1 = st.selectbox("Piece 1", wsl1_opts, index=wsl1_idx, key=f"wsl1_{i}")
+                    s_L = s_l1
+                    st.success(f"**Total Length = {s_L:.2f} m**")
                 
                 s_cl = st.number_input("L. Cant (m)", value=float(get_val("wscl", i, 0.50)), step=0.05, key=f"wscl_{i}")
                 s_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("wsspn", i, "1.30, 1.30")), key=f"wsspn_{i}")
                 
-                # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
                 s_spans_list = [float(x.strip()) for x in s_spns.split(',') if x.strip()]
                 s_cr = s_L - s_cl - sum(s_spans_list)
                 
@@ -341,18 +373,30 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
             col_m1, col_m2 = st.columns([1, 1.2])
             with col_m1:
                 m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("wms", i, list(SECTIONS_DB.keys()), def_main), key=f"wms_{i}")
-                m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wmsp", i, 1.30)), step=0.05, key=f"wmsp_{i}")
+                # التعديل: السماح بـ 3 أرقام عشرية
+                m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wmsp", i, 1.300)), step=0.005, format="%.3f", key=f"wmsp_{i}")
                 m_spc_val = m_spc
                 m_w_calc = w_tot * m_spc
                 
-                # خانة طول مباشر ونظيف تماماً
                 wml1_opts = STD_LENGTHS.get(m_sec, [3.0])
-                m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wml1_opts[-1]), step=0.1, key=f"num_wml1_{i}")
+                c_wml1, c_wml2 = st.columns([3, 1])
+                with c_wml2:
+                    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                    cust_wml = st.checkbox("✏️ Custom", key=f"cust_wml_{i}")
+                
+                if cust_wml:
+                    with c_wml1:
+                        m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(wml1_opts[-1]), step=0.1, key=f"num_wml1_{i}")
+                else:
+                    with c_wml1:
+                        wml1_idx = get_idx("wml1_w", i, wml1_opts, len(wml1_opts)-1 if m_sec in STD_LENGTHS else 0)
+                        m_l1 = st.selectbox("Piece 1", wml1_opts, index=wml1_idx, key=f"wml1_w_{i}")
+                    m_L = m_l1
+                    st.success(f"**Total Length = {m_L:.2f} m**")
                 
                 m_cl = st.number_input("L. Cant (m)", value=float(get_val("wmcl_w", i, 0.50)), step=0.05, key=f"wmcl_w_{i}")
                 m_spns = st.text_input("Spans (m) [Comma sep]", value=str(get_val("wmspn_w", i, "1.32, 1.32")), key=f"wmspn_w_{i}")
                 
-                # حماية الكود من الإدخال الخاطئ للفواصل أو الفراغات
                 m_spans_list = [float(x.strip()) for x in m_spns.split(',') if x.strip()]
                 m_cr = m_L - m_cl - sum(m_spans_list)
                 
