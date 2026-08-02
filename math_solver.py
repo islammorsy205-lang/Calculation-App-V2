@@ -37,25 +37,36 @@ def generate_hydrostatic_loads(w_tot, h_static, L_total, spacing):
         loads.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_static, 2), "LB (m)": round(L_total, 2)})
     return loads
 
-def get_shoring_allowable(shoring_type, unbraced_length):
-    if shoring_type == "Acrow Prop":
-        if unbraced_length <= 1.5: return 30.0
-        elif unbraced_length <= 2.0: return 25.0
-        elif unbraced_length <= 2.5: return 20.0
-        else: return 15.0
-    elif shoring_type == "Shorebrace Frame":
-        return 60.0
-    elif shoring_type == "Acrow Frame":
-        return 40.0
-    elif shoring_type == "Cup-lock":
-        if unbraced_length <= 1.0: return 45.0
-        elif unbraced_length <= 1.5: return 35.0
-        else: return 25.0
-    elif shoring_type == "Ring-lock":
-        if unbraced_length <= 1.0: return 50.0
-        elif unbraced_length <= 1.5: return 40.0
-        else: return 30.0
-    return None
+def get_prop_allowable(prop_name, ext, is_inner_up):
+    from config import PROP_DB
+    if prop_name not in PROP_DB: return 20.0
+    data = PROP_DB[prop_name]
+    mode = "inner" if is_inner_up else "outer"
+    pts = data[mode]
+    keys = sorted(pts.keys())
+    if ext <= keys[0]: return pts[keys[0]]
+    if ext >= keys[-1]: return pts[keys[-1]]
+    for i in range(len(keys)-1):
+        k1, k2 = keys[i], keys[i+1]
+        if k1 <= ext <= k2:
+            if k1 == k2: return pts[k1]
+            return pts[k1] + (pts[k2] - pts[k1]) * (ext - k1) / (k2 - k1)
+    return 20.0
+
+def get_scaffold_allowable(sys_type, subtype, unbraced):
+    from config import CUPLOCK_DB, RINGLOCK_DB
+    db = CUPLOCK_DB if sys_type == "Cup-lock" else RINGLOCK_DB
+    if subtype not in db: return 30.0
+    pts = db[subtype]
+    keys = sorted(pts.keys())
+    if unbraced <= keys[0]: return pts[keys[0]]
+    if unbraced >= keys[-1]: return pts[keys[-1]]
+    for i in range(len(keys)-1):
+        k1, k2 = keys[i], keys[i+1]
+        if k1 <= unbraced <= k2:
+            if k1 == k2: return pts[k1]
+            return pts[k1] + (pts[k2] - pts[k1]) * (unbraced - k1) / (k2 - k1)
+    return 30.0
 
 # ====================================================================
 # Finite Element Solver for Continuous Beams (Flawless Exact FEF & Smart Units)
@@ -66,10 +77,8 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
     
     # 💡 الاستشعار الذكي للوحدات (Smart Unit Detection)
     if E_val > 5000.0:
-        # المستخدم أدخل E بوحدة kN/cm2 (مثل 7000 للألمنيوم بناءً على الكتالوج)
         EI = E_val * I_val * 0.0001
     else:
-        # المستخدم أدخل E بوحدة T/cm2 (مثل 76 للـ Timber أو 2100 للستيل)
         EI = E_val * I_val * 0.001
         
     if EI <= 0: EI = 1000.0 
