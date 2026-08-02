@@ -54,7 +54,6 @@ def draw_system_sketch(L_total, supports_x, loads, transparent_bg=False):
         if ld['type'] in ['linear', 'Trapezoidal']:
             h1 = beam_y + (ld['w1'] / max_w) * scale_h
             h2 = beam_y + (ld['w2'] / max_w) * scale_h
-            # التعديل: تغيير لون الحمل بالكامل إلى اللون الأزرق كما طلبت
             ax.add_patch(patches.Polygon([[ld['x1'], beam_y], [ld['x1'], h1], [ld['x2'], h2], [ld['x2'], beam_y]], closed=True, fill=False, hatch='||', edgecolor='blue', linewidth=1))
             ax.plot([ld['x1'], ld['x2']], [h1, h2], color='blue', linewidth=1.5)
             ax.text((ld['x1']+ld['x2'])/2, max(h1, h2) + 0.1, f"Load {idx+1}", ha='center', fontsize=9, color='black', fontweight='normal', fontname='Arial')
@@ -220,6 +219,10 @@ def generate_acrow_diagrams(section_name, L_total, supports_x, loads, E, I, Mall
     abs_max_V = max(abs(max_V), abs(min_V))
     return img_stream.getvalue(), abs_max_M, abs_max_V, abs_max_D, np.max(R) if len(R)>0 else 0, all_def, def_txt
 
+# =========================================================================
+# دوال السترونج باك والـ SAP2000 (بدون Fill، دعامة 45 حقيقية، تهشير واسع، نصوص Arial)
+# =========================================================================
+
 def get_major_nodes(nodes, elements):
     connected_mems = [set() for _ in range(len(nodes))]
     node_degrees = [0] * len(nodes)
@@ -313,7 +316,6 @@ def draw_truss_axial(ax, x1, y1, x2, y2, N, sc, color):
     ax.text(mid_x, mid_y, f"{abs(N):.2f}", color=color, fontsize=7, ha='center', va='center', rotation=angle, fontname='Arial', fontweight='normal', bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.3))
 
 def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
-    has_tie = any(el['mem'] == 'Tie' for el in elements)
     valid_nodes = [n for n in nodes if not (n[0] < -0.1 and n[1] < -0.1)]
     if not valid_nodes: valid_nodes = nodes
     
@@ -363,14 +365,15 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
             dy = -0.15 if not invert_y_axis else 0.15
             y_base = n[1]
             
-            if n[0] == 0 and n[1] == 0 and has_tie:
+            # التعديل الإجباري: رسم الركيزة اللي عند (0,0) بزاوية 45 درجة دائماً
+            if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
                 theta = np.radians(-45)
                 c, s = np.cos(theta), np.sin(theta)
                 def rot(px, py): return px*c - py*s, px*s + py*c
                 p1, p2, p3 = rot(0,0), rot(-0.1,-0.15), rot(0.1,-0.15)
-                ax.add_patch(patches.Polygon([[p1[0], p1[1]], [p2[0], p2[1]], [p3[0], p3[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
+                ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
                 l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
-                ax.plot([l1[0], l2[0]], [l1[1], l2[1]], color='#00FF00', lw=1.5)
+                ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
                 continue
 
             if n[2] and n[3]: 
@@ -409,7 +412,6 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
             if w1 > 0 or w2 > 0:
                 hw1, hw2 = w1*sc, w2*sc
                 if w_dir == 'right':
-                    # التعديل: تغيير لون الحمل بالكامل إلى اللون الأزرق في رسومات الـ SAP أيضاً
                     ax.add_patch(patches.Polygon([[0, y1], [-hw1, y1], [-hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.8))
                     for y_arr in np.linspace(y1, y2, 5):
                         w_arr = w1 + (w2-w1)*(y_arr-y1)/(y2-y1) if y2 > y1 else w1
@@ -550,12 +552,12 @@ def draw_sap_rxn_single(nodes, elements, R_total):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
     draw_sap_base_frame(ax, nodes, elements)
-    has_tie = any(el['mem'] == 'Tie' for el in elements)
     
     for i, n in enumerate(nodes):
         rx, ry = R_total[3*i], R_total[3*i+1]
         
-        if n[0] == 0 and n[1] == 0 and has_tie:
+        # التعديل الإجباري: رسم الـ Reactions للركيزة اللي عند (0,0) بزاويتها الـ 45
+        if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             if abs(rx) > 0.1 or abs(ry) > 0.1:
                 theta = np.radians(-45)
                 c, s = np.cos(theta), np.sin(theta)
