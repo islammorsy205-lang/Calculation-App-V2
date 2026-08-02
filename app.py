@@ -164,7 +164,14 @@ if check_safety_btn:
                     _, _, _, _, R_m = solve_beam_advanced(conf['m_L'], conf['m_sup'], conf['m_ld'], prop_m['E'], prop_m['I'])
                     max_R = np.max(R_m) if len(R_m) > 0 else 0
                     t_safe = max_R <= conf['t_allow']
-                    df_data.append({"Component": f"Support ({conf['t_name']})", "Moment/Z": "-", "Shear": "-", "Deflection": "-", "Support/Reaction": f"{'SAFE' if t_safe else 'UNSAFE'} {max_R:.2f} < {conf['t_allow']:.2f}", "Status": "SAFE" if t_safe else "UNSAFE"})
+                    
+                    support_comp_name = conf['t_name']
+                    if conf['t_name'] == 'Acrow Prop' and conf.get('t_sub'):
+                        support_comp_name = f"Support ({conf['t_sub']})"
+                    else:
+                        support_comp_name = f"Support ({conf['t_name']})"
+                        
+                    df_data.append({"Component": support_comp_name, "Moment/Z": "-", "Shear": "-", "Deflection": "-", "Support/Reaction": f"{'SAFE' if t_safe else 'UNSAFE'} {max_R:.2f} < {conf['t_allow']:.2f}", "Status": "SAFE" if t_safe else "UNSAFE"})
 
             if conf.get('strongback', {}).get('active'):
                 sb = conf['strongback']
@@ -243,11 +250,9 @@ if generate_doc_btn:
                         
                 for k, v in replacements.items():
                     if k in p.text:
-                        # Attempt to replace within runs to keep colors/fonts
                         for r in p.runs:
                             if k in r.text:
                                 r.text = r.text.replace(k, str(v))
-                        # Fallback if split across runs
                         if k in p.text:  
                             p.text = p.text.replace(k, str(v))
 
@@ -388,7 +393,6 @@ if generate_doc_btn:
                     add_eq(doc, f"W_plywood = {conf['w']:.2f} KN/m²")
                     add_eq(doc, f"Max Spacing = {conf['s_spc']} m\n")
                     
-                    # التعديل: إضافة نص التحقق من العزوم
                     add_eq(doc, "Check for moment:", bold=True)
                     M_ply = (conf['w'] * (conf['s_spc']**2)) / 10
                     Z_req = (M_ply * 100) / 3.41
@@ -400,7 +404,6 @@ if generate_doc_btn:
                     D_ply = (0.0068 * conf['w'] * (conf['s_spc']*100)**4) / (100 * E_ply * I_ply)
                     all_ply_d = (conf['s_spc']*1000)/300
                     
-                    # التعديل: إضافة نص التحقق من الترخيم
                     doc.add_paragraph()
                     add_eq(doc, "Check for deflection:", bold=True)
                     add_eq(doc, f"D = 0.0068 * W * L⁴ / (E * I) = 0.0068 * {conf['w']:.2f} * ({conf['s_spc']*100:.1f})⁴ / (100 * {E_ply:.2f} * {I_ply:.1f}) = {D_ply:.2f} mm")
@@ -480,10 +483,18 @@ if generate_doc_btn:
                     
                     doc.add_page_break() 
 
-                    # 4. Support
+                    # 4. Support (التعديل الخاص بتفاصيل الـ Acrow Prop والـ Scaffolding)
                     if conf.get('t_allow') is not None and conf['t_allow'] < 900:
-                        add_heading_14(doc, f"{chk_counter}. {conf['t_name']}:")
-                        add_eq(doc, f"- Load on {conf['t_name']} = Max. Reaction from Main Beam = {m_R:.2f} KN < {conf['t_allow']:.2f} KN")
+                        support_title = conf['t_name']
+                        display_name = conf['t_name']
+                        if conf['t_name'] == 'Acrow Prop' and conf.get('t_sub'):
+                            support_title = f"{conf['t_name']} ({conf['t_sub']})"
+                            display_name = conf['t_sub']
+                        elif conf['t_name'] in ['Cup-lock', 'Ring-lock'] and conf.get('t_sub'):
+                            support_title = f"{conf['t_name']} ({conf['t_sub']}) - Unbraced Length = {conf['t_unb']:.2f} m"
+                            
+                        add_heading_14(doc, f"{chk_counter}. {support_title}:")
+                        add_eq(doc, f"- Load on {display_name} = Max. Reaction from Main Beam = {m_R:.2f} KN < {conf['t_allow']:.2f} KN")
                         add_word_check(doc, "Check for Support", m_R, conf['t_allow'], "KN")
                         chk_counter += 1
 
@@ -679,8 +690,6 @@ if generate_doc_btn:
                         add_word_check(doc, "Max Shear per Bolt (Worst Base)", max_rx_base/2, 29.50, "KN")
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
 
-            # --- التعديل هنا: داتا شيت الهيلتي مباشرة بدون Banner أو Border ---
-            # تظهر فقط في حالة الحوائط أو الأعمدة (Vertical)
             if "Vertical" in sys_cat and os.path.exists("Hilti_Bolt.pdf"):
                 doc.add_page_break()
                 append_pdf_stream_to_word("Hilti_Bolt.pdf", doc, is_path=True, max_width_cm=17.5, max_height_cm=24.0, add_border=False)
