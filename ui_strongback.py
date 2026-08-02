@@ -100,8 +100,6 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                 
             for d in diags: els.append({'n1': get_n(0, d['y']), 'n2': get_n(d['x'], 0), 'sec': d['type'].split()[0], 'mem': 'D', 'type': 'truss'})
                 
-            # تم حذف عنصر الزرجينة الوهمي للسماح للركيزة باستقبال الـ Reaction الطبيعي المطابق لـ SAP2000
-            
             R_tot, U = solve_fea(nodes, els, sb_custom_loads, sb_dist_loads)
             
             max_M_v = max([max(abs(el['M'])) for el in els if el['mem']=='V'] + [0])
@@ -114,10 +112,15 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             y_vals = sorted([nodes[idx][1] for idx in v_nodes_idx])
             allw_def_v = ((max(np.diff(y_vals)) if len(y_vals)>1 else sb_Lv) * 1000) / 400.0
             
-            # التعديل الجذري: سحب الـ Axial Reaction (Vertical) مباشرة من الركيزة 
+            # =========================================================================
+            # التعديل الجذري: سحب الـ Rx و Ry وتحليلهم لـ 45 درجة (المتطابق مع صورتك 27.87)
+            # =========================================================================
             corner_idx = get_n(0, 0)
             if corner_idx != -1:
-                base_axial_reaction = abs(R_tot[3 * corner_idx + 1])
+                rx_corner = R_tot[3 * corner_idx]
+                ry_corner = R_tot[3 * corner_idx + 1]
+                # حساب القوة المحورية في اتجاه 45 درجة
+                base_axial_reaction = abs(rx_corner) * np.cos(np.radians(45)) + abs(ry_corner) * np.sin(np.radians(45))
             else:
                 base_axial_reaction = 0.0
                 
