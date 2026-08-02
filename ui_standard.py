@@ -68,7 +68,7 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                 st.error(f"❌ Error: Spans exceed total length!")
                 
             # ==============================================================
-            # العقل المفكر: حساب الـ Loaded Width الذكي للكمر الرئيسي
+            # العقل المفكر: حساب الـ Loaded Width الذكي للكمر الرئيسي بدقة تامة
             # ==============================================================
             auto_m_spc = 1.10
             if element_type == "Beam":
@@ -131,6 +131,7 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             m_sec = st.selectbox("Main Section", list(SECTIONS_DB.keys()), index=get_idx("ms", i, list(SECTIONS_DB.keys()), def_main), key=f"ms_{i}")
             
             m_spc_def = round(auto_m_spc, 3)
+            # تحديث الـ Main Spacing فوراً عند تغيير الـ Secondary Spans
             if st.session_state.get(f"last_auto_msp_{i}") != m_spc_def:
                 st.session_state[f"msp_{i}"] = m_spc_def
                 st.session_state[f"last_auto_msp_{i}"] = m_spc_def
@@ -341,6 +342,9 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 if s_cr < -0.01: 
                     st.error(f"❌ Error: Spans exceed total length!")
                     
+                # ==============================================================
+                # العقل المفكر: حساب الـ Loaded Width الذكي للكمر الرئيسي للحوائط
+                # ==============================================================
                 auto_m_spc = 1.30
                 if len(s_spans_list) > 0:
                     trib_widths = [s_cl + s_spans_list[0] / 2.0]
