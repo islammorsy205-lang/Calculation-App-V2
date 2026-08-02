@@ -15,7 +15,8 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         with c1: 
-            sb_spc = st.number_input("Strongback Spacing (m)", value=float(m_spc_val), step=0.05, key=f"sb_spc_{i}")
+            # التعديل: السماح بـ 3 أرقام عشرية
+            sb_spc = st.number_input("Strongback Spacing (m)", value=float(m_spc_val), step=0.005, format="%.3f", key=f"sb_spc_{i}")
             w1_base = w_tot * sb_spc
             st.info(f"**Hydrostatic Base Load:** {w1_base:.2f} kN/m'")
         with c2: 
@@ -117,7 +118,6 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
             
             corner_idx = get_n(0, 0)
             rx_corner, ry_corner = R_tot[3 * corner_idx], R_tot[3 * corner_idx + 1]
-            # تعديل الزاوية لتصبح -45 كما هو في الرسم الجديد لكي تتطابق الحسابات مع اتجاه السهم
             axial_45 = rx_corner * np.cos(np.radians(-45)) + ry_corner * np.sin(np.radians(-45))
             
             tie_force_total = abs(axial_45)
@@ -136,7 +136,6 @@ def render_strongback_ui(i, w_tot, h_static, m_spc_val):
                 
                 st.markdown("**Diagrams View Settings (Independent Scales)**")
                 c_sc1, c_sc2, c_sc3, c_sc4 = st.columns(4)
-                # إضافة Sliders سلسة للتحكم في كل رسمة على حدة بدلاً من الإدخال الرقمي الجاف
                 sc_ld = c_sc1.slider("Loads Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1, key=f"sc_ld_{i}")
                 sc_ax = c_sc2.slider("Axial Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1, key=f"sc_ax_{i}")
                 sc_sh = c_sc3.slider("Shear Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1, key=f"sc_sh_{i}")
