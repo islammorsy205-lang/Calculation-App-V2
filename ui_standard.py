@@ -45,9 +45,18 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("ssp", i, 0.35)), step=0.05, key=f"ssp_{i}")
             s_w_calc = w_tot * s_spc
             
-            s_l1_opts = [0.0] + STD_LENGTHS.get(s_sec, [3.0])
-            s_l1_idx = get_idx("sl1", i, s_l1_opts, len(s_l1_opts)-1 if s_sec in STD_LENGTHS else 1)
-            s_L = st.selectbox("Total Length (m)", s_l1_opts, index=s_l1_idx, key=f"sl1_{i}")
+            # التعديل: إزالة الصفر وإضافة زرار الطول المخصص
+            s_l1_opts = STD_LENGTHS.get(s_sec, [3.0])
+            c_sl1, c_sl2 = st.columns([3, 1])
+            with c_sl2:
+                st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                cust_sL = st.checkbox("✏️ Custom", key=f"cust_sL_{i}")
+            with c_sl1:
+                if cust_sL:
+                    s_L = st.number_input("Total Length (m)", min_value=0.1, value=float(s_l1_opts[-1]), step=0.1, key=f"num_sL_{i}")
+                else:
+                    s_l1_idx = get_idx("sl1", i, s_l1_opts, len(s_l1_opts)-1 if s_sec in STD_LENGTHS else 0)
+                    s_L = st.selectbox("Total Length (m)", s_l1_opts, index=s_l1_idx, key=f"sl1_{i}")
             st.success(f"**Total Length = {s_L:.2f} m**")
             
             s_cl = st.number_input("L. Cant (m)", value=float(get_val("scl", i, 0.50)), step=0.05, key=f"scl_{i}")
@@ -111,9 +120,18 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
             m_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val(f"msp_{beam_pos}", i, m_spc_def)), step=0.05, key=f"msp_{i}")
             m_w_calc = w_tot * m_spc
             
-            m_l1_opts = [0.0] + STD_LENGTHS.get(m_sec, [3.0])
-            m_l1_idx = get_idx("wml1", i, m_l1_opts, len(m_l1_opts)-1 if m_sec in STD_LENGTHS else 1)
-            m_L = st.selectbox("Total Length (m)", m_l1_opts, index=m_l1_idx, key=f"wml1_{i}")
+            # التعديل: إزالة الصفر وإضافة زرار الطول المخصص
+            m_l1_opts = STD_LENGTHS.get(m_sec, [3.0])
+            c_ml1, c_ml2 = st.columns([3, 1])
+            with c_ml2:
+                st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                cust_mL = st.checkbox("✏️ Custom", key=f"cust_mL_{i}")
+            with c_ml1:
+                if cust_mL:
+                    m_L = st.number_input("Total Length (m)", min_value=0.1, value=float(m_l1_opts[-1]), step=0.1, key=f"num_mL_{i}")
+                else:
+                    m_l1_idx = get_idx("wml1", i, m_l1_opts, len(m_l1_opts)-1 if m_sec in STD_LENGTHS else 0)
+                    m_L = st.selectbox("Total Length (m)", m_l1_opts, index=m_l1_idx, key=f"wml1_{i}")
             st.success(f"**Total Length = {m_L:.2f} m**")
             
             m_cl = st.number_input("L. Cant (m)", value=float(get_val("mcl", i, 0.50)), step=0.05, key=f"mcl_{i}")
@@ -290,15 +308,29 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 s_sec = st.selectbox("Sec Section", s_sec_opts, index=get_idx("wss", i, s_sec_opts, def_s), key=f"wss_{i}")
                 s_spc = st.number_input("Spacing (Loaded Width) (m)", value=float(get_val("wssp", i, 0.31)), step=0.05, key=f"wssp_{i}")
                 
-                wsl1_opts = [0.0] + STD_LENGTHS.get(s_sec, [3.0])
-                wsl1_idx = get_idx("wsl1", i, wsl1_opts, len(wsl1_opts)-1 if s_sec in STD_LENGTHS else 1)
-                s_l1 = st.selectbox("Piece 1", wsl1_opts, index=wsl1_idx, key=f"wsl1_{i}")
+                # التعديل: إزالة الصفر وإضافة زرار الطول المخصص
+                wsl1_opts = STD_LENGTHS.get(s_sec, [3.0])
+                c_wsl1, c_wsl2 = st.columns([3, 1])
+                with c_wsl2:
+                    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                    cust_wsl = st.checkbox("✏️ Custom", key=f"cust_wsl_{i}")
+                with c_wsl1:
+                    if cust_wsl:
+                        s_l1 = st.number_input("Piece 1", min_value=0.1, value=float(wsl1_opts[-1]), step=0.1, key=f"num_wsl1_{i}")
+                    else:
+                        wsl1_idx = get_idx("wsl1", i, wsl1_opts, len(wsl1_opts)-1 if s_sec in STD_LENGTHS else 0)
+                        s_l1 = st.selectbox("Piece 1", wsl1_opts, index=wsl1_idx, key=f"wsl1_{i}")
                 
                 s_l2, s_l3 = 0.0, 0.0
                 if st.toggle("➕ Add Splicing (Pieces 2 & 3)", value=bool(get_val("ws_tog", i, False)), key=f"ws_tog_{i}"):
-                    s_l2 = st.selectbox("Piece 2", wsl1_opts, index=get_idx("wsl2", i, wsl1_opts, 0), key=f"wsl2_{i}")
-                    s_l3 = st.selectbox("Piece 3", wsl1_opts, index=get_idx("wsl3", i, wsl1_opts, 0), key=f"wsl3_{i}")
-                    
+                    c_p2, c_p3 = st.columns(2)
+                    if cust_wsl:
+                        s_l2 = c_p2.number_input("Piece 2", min_value=0.0, value=0.0, step=0.1, key=f"num_wsl2_{i}")
+                        s_l3 = c_p3.number_input("Piece 3", min_value=0.0, value=0.0, step=0.1, key=f"num_wsl3_{i}")
+                    else:
+                        s_l2 = c_p2.selectbox("Piece 2", [0.0] + wsl1_opts, index=0, key=f"wsl2_{i}")
+                        s_l3 = c_p3.selectbox("Piece 3", [0.0] + wsl1_opts, index=0, key=f"wsl3_{i}")
+                        
                 s_L = s_l1 + s_l2 + s_l3
                 if ("H20" in s_sec or "S12" in s_sec) and st.checkbox("Add 10cm to Total Length (Overlap)", value=bool(get_val("ws10_h", i, False)), key=f"ws10_h_{i}"): 
                     s_L += 0.10
@@ -357,15 +389,29 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 m_spc_val = m_spc
                 m_w_calc = w_tot * m_spc
                 
-                wml1_opts = [0.0] + STD_LENGTHS.get(m_sec, [3.0])
-                wml1_idx = get_idx("wml1_w", i, wml1_opts, len(wml1_opts)-1 if m_sec in STD_LENGTHS else 1)
-                m_l1 = st.selectbox("Piece 1", wml1_opts, index=wml1_idx, key=f"wml1_w_{i}")
+                # التعديل: إزالة الصفر وإضافة زرار الطول المخصص
+                wml1_opts = STD_LENGTHS.get(m_sec, [3.0])
+                c_wml1, c_wml2 = st.columns([3, 1])
+                with c_wml2:
+                    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+                    cust_wml = st.checkbox("✏️ Custom", key=f"cust_wml_{i}")
+                with c_wml1:
+                    if cust_wml:
+                        m_l1 = st.number_input("Piece 1", min_value=0.1, value=float(wml1_opts[-1]), step=0.1, key=f"num_wml1_{i}")
+                    else:
+                        wml1_idx = get_idx("wml1_w", i, wml1_opts, len(wml1_opts)-1 if m_sec in STD_LENGTHS else 0)
+                        m_l1 = st.selectbox("Piece 1", wml1_opts, index=wml1_idx, key=f"wml1_w_{i}")
                 
                 m_l2, m_l3 = 0.0, 0.0
                 if st.toggle("➕ Add Splicing (Pieces 2 & 3)", value=bool(get_val("wm_tog_w", i, False)), key=f"wm_tog_w_{i}"):
-                    m_l2 = st.selectbox("Piece 2", wml1_opts, index=get_idx("wml2_w", i, wml1_opts, 0), key=f"wml2_w_{i}")
-                    m_l3 = st.selectbox("Piece 3", wml1_opts, index=get_idx("wml3_w", i, wml1_opts, 0), key=f"wml3_w_{i}")
-                    
+                    c_p2, c_p3 = st.columns(2)
+                    if cust_wml:
+                        m_l2 = c_p2.number_input("Piece 2", min_value=0.0, value=0.0, step=0.1, key=f"num_wml2_{i}")
+                        m_l3 = c_p3.number_input("Piece 3", min_value=0.0, value=0.0, step=0.1, key=f"num_wml3_{i}")
+                    else:
+                        m_l2 = c_p2.selectbox("Piece 2", [0.0] + wml1_opts, index=0, key=f"wml2_w_{i}")
+                        m_l3 = c_p3.selectbox("Piece 3", [0.0] + wml1_opts, index=0, key=f"wml3_w_{i}")
+                        
                 m_L = m_l1 + m_l2 + m_l3
                 if "H20" in m_sec and st.checkbox("Add 10cm to Total Length (Overlap)", value=bool(get_val("wm10_h_w", i, False)), key=f"wm10_h_w_{i}"): 
                     m_L += 0.10
