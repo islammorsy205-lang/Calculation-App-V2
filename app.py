@@ -223,43 +223,46 @@ if generate_doc_btn:
             file_sub_cat = configs[0]['sub_cat'] if (configs and 'sub_cat' in configs[0]) else ("Slab" if "Slab" in sys_cat else "Vertical")
             sys_name_clean = sys_name.replace("/", "-").replace("\\", "-")
             file_name = f"Calculation Sheet for {file_sub_cat} - Using {sys_name_clean}.docx"
-            
-            for p in doc.paragraphs: 
-                p._element.getparent().remove(p._element)
 
-            # --- Cover Page Layout ---
-            p_cov = doc.add_paragraph()
-            p_cov.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            if cover_img and cover_img != "No images found." and os.path.exists(cover_img): 
-                p_cov.add_run().add_picture(cover_img, width=Cm(15.0))
+            # ==========================================
+            # Smart Find & Replace logic for Cover Page
+            # ==========================================
+            replacements = {
+                "[PROJECT_NAME]": proj_name,
+                "[CONTRACTOR]": contractor,
+                "[CALC_SUBJECT]": calc_sub,
+                "[SYSTEM_NAME]": sys_name
+            }
             
-            p_text = doc.add_paragraph()
-            p_text.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            r1 = p_text.add_run(f"\n{proj_name}\n\n")
-            r1.font.name = 'Arial'
-            r1.font.size = Pt(16)
-            r1.font.bold = True
-            r1.font.color.rgb = RGBColor(192, 0, 0)
-            
-            r2 = p_text.add_run(f"{contractor}\n\n")
-            r2.font.name = 'Arial'
-            r2.font.size = Pt(16)
-            r2.font.bold = True
-            r2.font.color.rgb = RGBColor(80, 80, 80)
-            
-            r3 = p_text.add_run(f"CALCULATION SHEET FOR {calc_sub}\n\n")
-            r3.font.name = 'Arial'
-            r3.font.size = Pt(16)
-            r3.font.bold = True
-            r3.font.color.rgb = RGBColor(192, 0, 0)
-            
-            r4 = p_text.add_run(f"USING\n\n")
-            r4.font.name = 'Arial'
-            r4.font.size = Pt(14)
-            r4.font.bold = True
-            
-            insert_blue_banner(doc, sys_name, font_size=18)
+            for p in doc.paragraphs:
+                if "[COVER_IMAGE]" in p.text:
+                    for r in p.runs:
+                        r.text = r.text.replace("[COVER_IMAGE]", "")
+                    if cover_img and cover_img != "No images found." and os.path.exists(cover_img):
+                        p.add_run().add_picture(cover_img, width=Cm(15.0))
+                        
+                for k, v in replacements.items():
+                    if k in p.text:
+                        # Attempt to replace within runs to keep colors/fonts
+                        for r in p.runs:
+                            if k in r.text:
+                                r.text = r.text.replace(k, str(v))
+                        # Fallback if split across runs
+                        if k in p.text:  
+                            p.text = p.text.replace(k, str(v))
+
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    for cell in row.cells:
+                        for p in cell.paragraphs:
+                            for k, v in replacements.items():
+                                if k in p.text:
+                                    for r in p.runs:
+                                        if k in r.text:
+                                            r.text = r.text.replace(k, str(v))
+                                    if k in p.text:
+                                        p.text = p.text.replace(k, str(v))
+                                        
             doc.add_page_break()
             
             # --- Headers and Footers ---
@@ -272,7 +275,11 @@ if generate_doc_btn:
                                     for p in cell.paragraphs:
                                         for k, v in {"[PROJECT_NAME]": proj_name, "[CONTRACTOR]": contractor, "[PROJ_NO]": proj_no, "[DATE]": date_val, "[CALC_BY]": calc_by, "[CHK_BY]": chk_by, "[REV]": "00"}.items():
                                             if k in p.text:
-                                                p.text = p.text.replace(k, v)
+                                                for r in p.runs:
+                                                    if k in r.text:
+                                                        r.text = r.text.replace(k, str(v))
+                                                if k in p.text:
+                                                    p.text = p.text.replace(k, str(v))
                                                 for r in p.runs: 
                                                     r.font._element.set(qn('w:ascii'), 'Arial')
             
