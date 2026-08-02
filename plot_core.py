@@ -315,8 +315,7 @@ def draw_truss_axial(ax, x1, y1, x2, y2, N, sc, color):
     mid_y = (y1 + y2)/2 + (N*ny*sc)/2
     ax.text(mid_x, mid_y, f"{abs(N):.2f}", color=color, fontsize=7, ha='center', va='center', rotation=angle, fontname='Arial', fontweight='normal', bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.3))
 
-def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
-    has_tie = any(el['mem'] == 'Tie' for el in elements)
+def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False, corner_sup="Hinged"):
     valid_nodes = [n for n in nodes if not (n[0] < -0.1 and n[1] < -0.1)]
     if not valid_nodes: valid_nodes = nodes
     
@@ -366,13 +365,13 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
             dy = -0.15 if not invert_y_axis else 0.15
             y_base = n[1]
             
-            # التعديل الإجباري: رسم الركيزة اللي عند (0,0) بزاوية 45 درجة (رولر أو هنجد)
+            # رسم الدعامة عند (0,0) بزاوية 45 درجة مع التمييز بين Hinged و Roller
             if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
                 theta = np.radians(-45)
                 c, s = np.cos(theta), np.sin(theta)
                 def rot(px, py): return px*c - py*s, px*s + py*c
                 
-                if has_tie: # Roller @ 45 deg
+                if corner_sup == "Roller":
                     p1, p2, p3 = rot(0,0), rot(-0.075,-0.12), rot(0.075,-0.12)
                     ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
                     c1, c2 = rot(-0.04, -0.135), rot(0.04, -0.135)
@@ -380,7 +379,7 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
                     ax.add_patch(plt.Circle((c2[0]+n[0], c2[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=1.5))
                     l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
                     ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
-                else: # Hinged @ 45 deg
+                else:
                     p1, p2, p3 = rot(0,0), rot(-0.1,-0.15), rot(0.1,-0.15)
                     ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
                     l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
@@ -396,14 +395,11 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
                 ax.add_patch(plt.Circle((n[0]+0.04, y_base+dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=1.5))
                 ax.plot([n[0]-0.15, n[0]+0.15], [y_base+dy, y_base+dy], color='#00FF00', lw=1.5)
 
-def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, scale_factor=1.0):
+def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
-    major_nodes = get_major_nodes(nodes, elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
-    # التعديل: تم مسح كل أرقام وإحداثيات النقط الجانبية (y_nodes_v و x_nodes_h) لعرض الأحمال فقط بشكل نظيف
-            
     if dist_loads:
         sc = (1.0 / max([max(abs(dl['w1']), abs(dl['w2'])) for dl in dist_loads] + [1])) * scale_factor
         for dl in dist_loads:
@@ -445,10 +441,10 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_axial_single(nodes, elements, scale_factor=1.0):
+def draw_sap_axial_single(nodes, elements, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
     max_n = max([abs(el['N_ax']) for el in elements if el['type']=='truss'] + [abs(el['N'].mean()) for el in elements if el['type']=='frame'] + [1e-5])
     sc_n = (1.0 / max_n) * scale_factor
@@ -481,10 +477,10 @@ def draw_sap_axial_single(nodes, elements, scale_factor=1.0):
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_shear_single(nodes, elements, scale_factor=1.0):
+def draw_sap_shear_single(nodes, elements, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
     max_v = max([max(abs(el['V'])) for el in elements if el['type']=='frame'] + [1e-5])
     sc_v = (1.0 / max_v) * scale_factor
@@ -515,10 +511,10 @@ def draw_sap_shear_single(nodes, elements, scale_factor=1.0):
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_moment_single(nodes, elements, scale_factor=1.0):
+def draw_sap_moment_single(nodes, elements, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False)
+    draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False, corner_sup=corner_sup)
     
     max_m = max([max(abs(el['M'])) for el in elements if el['type']=='frame'] + [1e-5])
     sc_m = (1.0 / max_m) * scale_factor
@@ -552,28 +548,28 @@ def draw_sap_moment_single(nodes, elements, scale_factor=1.0):
 def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
-    has_tie = any(el['mem'] == 'Tie' for el in elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
     for i, n in enumerate(nodes):
-        # التعديل: تدوير الركيزة (Corner) واستخراج الـ Axial/Shear بناءً على حالة الـ Support بزاويتها الـ 45
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             c, s = 0.70710678, 0.70710678
-            if not has_tie: # Hinged (يعرض Tension و Shear)
-                rx, ry = R_total[3*i], R_total[3*i+1]
+            rx, ry = R_total[3*i], R_total[3*i+1]
+            
+            if corner_sup == "Roller":
+                # في حالة الـ Roller: إظهار سهم واحد فقط (Axial Tension)
+                R_axial = rx * c + ry * s
+                R_shear = 0.0
+            else:
+                # في حالة الـ Hinged: إظهار سهمين (Axial و Shear)
                 R_axial = rx * c + ry * s
                 R_shear = -rx * s + ry * c
-            else: # Roller (يعرض Tension فقط)
-                tie_el = next((e for e in elements if e['mem'] == 'Tie'), None)
-                R_axial = tie_el['N_ax'] if tie_el else 0.0
-                R_shear = 0.0
             
             if abs(R_axial) > 0.1:
                 nx, ny = -c, -s
                 mag = abs(R_axial)
                 sign = np.sign(R_axial) if R_axial != 0 else 1
-                tail_x = -0.25 * nx * sign
-                tail_y = -0.25 * ny * sign
+                tail_x = -0.30 * nx * sign
+                tail_y = -0.30 * ny * sign
                 ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
                 ax.text(tail_x*1.5+n[0], tail_y*1.5+n[1], f"{mag:.2f}", color='black', rotation=45, ha='center', va='center', fontsize=8, fontname='Arial')
                 
@@ -581,8 +577,8 @@ def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
                 nx, ny = s, -c
                 mag = abs(R_shear)
                 sign = np.sign(R_shear) if R_shear != 0 else 1
-                tail_x = -0.25 * nx * sign
-                tail_y = -0.25 * ny * sign
+                tail_x = -0.30 * nx * sign
+                tail_y = -0.30 * ny * sign
                 ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
                 ax.text(tail_x*1.5+n[0], tail_y*1.5+n[1], f"{mag:.2f}", color='black', rotation=-45, ha='center', va='center', fontsize=8, fontname='Arial')
             continue
