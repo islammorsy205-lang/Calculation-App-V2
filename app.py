@@ -88,7 +88,7 @@ elif not calc_by or calc_by == "Eng. ":
     calc_by = "Eng."
 # ==========================================
 
-# التعديل المطلوب: الكود البريطاني = 1.50، والأمريكي = 2.40
+# الكود البريطاني = 1.50، والأمريكي = 2.40
 def_live_load = 1.50 if "BS" in ref_code else 2.40
 
 # ==========================================
@@ -248,8 +248,10 @@ if generate_doc_btn:
     elif not os.path.exists("Acrow_Template.docx"): 
         st.error("❌ Template file 'Acrow_Template.docx' not found.")
     else:
+        # التعديل الجذري: إيقاف البرنامج بالكامل عن استخراج التقرير في حال وجود أي قطاع غير آمن
         if not perform_global_safety_check(configs): 
-            st.warning("⚠️ تحذير: توجد قطاعات غير آمنة (UNSAFE). سيتم إصدار النوتة لغرض المراجعة فقط.")
+            st.error("❌ **Report Generation Rejected:** One or more structural components are UNSAFE. Please review the 'Pre-Check Safety' results and fix the failing elements before generating the calculation sheet.")
+            st.stop()
             
         with st.spinner("🔄 Running Advanced 3-Moment Equation Solver & Building Document..."):
             doc = Document("Acrow_Template.docx")
@@ -515,9 +517,18 @@ if generate_doc_btn:
                     add_heading_14(doc, f"{chk_counter}. Main Decking {conf['m_sec']}:")
                     add_eq(doc, f"- Main Beam length = {conf['m_L']:.2f} m")
                     add_eq(doc, f"- Max. Span of main {conf['m_sec'].split()[0]} = {max_m_span:.2f} m")
-                    add_eq(doc, f"- Loaded width by one row of main {conf['m_sec'].split()[0]} = {conf['m_spc']:.2f} m")
-                    m_w_calc = conf['w'] * conf['m_spc']
-                    add_eq_highlight(doc, f"- W_main = {conf['w']:.2f} x {conf['m_spc']:.2f} = ", f"{m_w_calc:.2f} KN/m'")
+                    
+                    # التعديل الخاص بطباعة معادلة الحمل الخطي للمين حسب الاختيار (Reaction vs Surface Pressure)
+                    if "Secondary Reaction" in conf.get("m_load_method", ""):
+                        max_s = conf.get("max_s_rxn", 0.0)
+                        m_w_calc = max_s / conf['s_spc'] if conf['s_spc'] > 0 else 0.0
+                        add_eq(doc, f"- Spacing between Secondary decking = {conf['s_spc']:.2f} m")
+                        add_eq(doc, f"- Max Reaction from Secondary Beam = {max_s:.2f} KN")
+                        add_eq_highlight(doc, f"- W_main = Max Reaction / Sec. Spacing = {max_s:.2f} / {conf['s_spc']:.2f} = ", f"{m_w_calc:.2f} KN/m'")
+                    else:
+                        add_eq(doc, f"- Loaded width by one row of main {conf['m_sec'].split()[0]} = {conf['m_spc']:.2f} m")
+                        m_w_calc = conf['w'] * conf['m_spc']
+                        add_eq_highlight(doc, f"- W_main = {conf['w']:.2f} x {conf['m_spc']:.2f} = ", f"{m_w_calc:.2f} KN/m'")
                     
                     prop_m = SECTIONS_DB[conf['m_sec']]
                     p_msk = doc.add_paragraph()
