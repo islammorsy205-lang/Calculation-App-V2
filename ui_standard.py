@@ -6,7 +6,7 @@ import fitz
 import re
 from helpers import get_val, get_idx, convert_transparent_to_pdf_stream
 from config import SECTIONS_DB, STD_LENGTHS, SHORING_OPTIONS_SLAB, ECO_FORM_ALLOW, TECH_FORM_ALLOW, CIRCULAR_ALLOW
-from math_solver import parse_loads_from_df, generate_hydrostatic_loads, get_scaffold_allowable, get_prop_allowable
+from math_solver import parse_loads_from_df, generate_hydrostatic_loads, get_scaffold_allowable, get_prop_allowable, solve_beam_advanced
 from plot_core import draw_system_sketch, generate_acrow_diagrams
 
 # سيتم استدعاء الرياح والسترونج باك كملفات مستقلة تماماً داخل هذا الملف
@@ -120,6 +120,13 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                         with img_col: 
                             st.image(s_img_bytes, use_container_width=True)
 
+        # حساب رد فعل السكندري أوتوماتيكياً في الخلفية
+        try:
+            _, _, _, _, s_R = solve_beam_advanced(s_L, s_supports, s_loads_parsed, SECTIONS_DB[s_sec]['E'], SECTIONS_DB[s_sec]['I'])
+            max_s_reaction = max(s_R) if len(s_R) > 0 else 0.0
+        except:
+            max_s_reaction = 0.0
+
     st.divider()
     with st.container(border=True):
         st.markdown("### 🏗️ Main Beam & Shoring")
@@ -133,7 +140,6 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                 st.session_state[f"last_auto_msp_{i}"] = m_spc_def
                 
             m_spc = st.number_input("Spacing (Loaded Width) (m)", value=m_spc_def, step=0.005, format="%.3f", key=f"msp_{i}")
-            m_w_calc = w_tot * m_spc
             
             m_l1_opts = STD_LENGTHS.get(m_sec, [3.0])
             c_ml1, c_ml2 = st.columns([3, 1])
@@ -209,6 +215,16 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
                 t_al = st.number_input("Allowable (kN)", value=float(get_val("ta_man", i, 20.0)), step=0.5, key=f"ta_man_{i}")
 
         with col_m2:
+            st.markdown("**Load Calculation Method:**")
+            m_load_method = st.radio("Main Beam Load Source:", 
+                                    ["Surface Pressure (W_tot × Main Spacing)", "Secondary Reaction (Max Reaction / Sec Spacing)"], 
+                                    horizontal=True, key=f"m_l_meth_{i}", label_visibility="collapsed")
+            
+            if "Surface Pressure" in m_load_method:
+                m_w_calc = w_tot * m_spc
+            else:
+                m_w_calc = max_s_reaction / s_spc if s_spc > 0 else 0.0
+                
             st.markdown("**Load Assignment & Interactive Sketch**")
             m_df = pd.DataFrame([{
                 "Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_calc, 2), 
@@ -246,7 +262,8 @@ def render_slab_element(i, gamma_c, live_load, fw_load, def_sec, def_main):
         "s_cl": s_cl, "s_sp": s_spns, "s_cr": s_cr, "s_ld": s_loads_parsed, "s_sup": s_supports, 
         "s_ld_img": s_sketch_bytes, "m_sec": m_sec, "m_spc": m_spc, "m_L": m_L, "m_cl": m_cl, 
         "m_sp": m_spns, "m_cr": m_cr, "m_ld": m_loads_parsed, "m_sup": m_supports, 
-        "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al, "t_sub": t_sub, "t_unb": t_unb
+        "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al, "t_sub": t_sub, "t_unb": t_unb,
+        "m_load_method": m_load_method, "max_s_rxn": max_s_reaction
     }
 
 def render_vertical_element(i, element_subtype, def_sec, def_main):
@@ -367,9 +384,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
             with col_s2:
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
-                # ==============================================================================
-                # علامة ✅ للتأكيد على تحديث الكود الجديد + إجبار البرنامج على حمل صفر للمسافة الفاضية
-                # ==============================================================================
                 col_tog_s, col_inp_s = st.columns([1.2, 1])
                 with col_tog_s:
                     is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal) ✅", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
@@ -391,7 +405,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     if h_static > 0 and eff_h > h_const:
                         s_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
-                    # 💡 إضافة الحمل الصفري لإغلاق معادلات الاتزان بدقة للمسافة الفارغة
                     if eff_h < s_L:
                         s_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(eff_h, 2), "LB (m)": round(s_L, 2)})
                         
@@ -425,6 +438,13 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                             with col_dwn: st.download_button("📥 PDF", convert_transparent_to_pdf_stream(ws_img_bytes), f"{s_sec}_Diagram.pdf", "application/pdf", key=f"dwn_s_wall_{i}")
                             with img_col: st.image(ws_img_bytes, use_container_width=True)
 
+        # حساب رد فعل السكندري أوتوماتيكياً في الخلفية لحوائط
+        try:
+            _, _, _, _, s_R = solve_beam_advanced(s_L, s_supports, s_loads_parsed, SECTIONS_DB[s_sec]['E'], SECTIONS_DB[s_sec]['I'])
+            max_s_reaction = max(s_R) if len(s_R) > 0 else 0.0
+        except:
+            max_s_reaction = 0.0
+
         st.divider()
         with st.container(border=True):
             st.markdown("### 🏗️ Main Beam" + ("" if is_single_sided else " & Tie Rod"))
@@ -439,7 +459,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     
                 m_spc = st.number_input("Spacing (Loaded Width) (m)", value=m_spc_def, step=0.005, format="%.3f", key=f"wmsp_{i}")
                 m_spc_val = m_spc
-                m_w_calc = w_tot * m_spc
                 
                 wml1_opts = STD_LENGTHS.get(m_sec, [3.0])
                 c_wml1, c_wml2 = st.columns([3, 1])
@@ -472,11 +491,18 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     t_al = 999.0
                 
             with col_m2:
+                st.markdown("**Load Calculation Method:**")
+                m_load_method = st.radio("Main Beam Load Source:", 
+                                        ["Surface Pressure (W_tot × Main Spacing)", "Secondary Reaction (Max Reaction / Sec Spacing)"], 
+                                        horizontal=True, key=f"m_l_meth_{i}", label_visibility="collapsed")
+                
+                if "Surface Pressure" in m_load_method:
+                    m_w_max = w_tot * m_spc
+                else:
+                    m_w_max = max_s_reaction / s_spc if s_spc > 0 else 0.0
+                
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
-                # ==============================================================================
-                # علامة ✅ للتأكيد على تحديث الكود الجديد + إجبار البرنامج على حمل صفر للمسافة الفاضية
-                # ==============================================================================
                 col_tog_m, col_inp_m = st.columns([1.2, 1])
                 with col_tog_m:
                     is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal) ✅", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
@@ -487,7 +513,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                         m_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(m_L), value=0.0, step=0.05, key=f"m_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة")
 
                 if is_hydro_m: 
-                    m_w_max = w_tot * m_spc
                     eff_h = m_L - m_top_empty
                     h_const = max(0.0, eff_h - h_static)
                     m_loads_data = []
@@ -498,15 +523,13 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     if h_static > 0 and eff_h > h_const:
                         m_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
-                    # 💡 إضافة الحمل الصفري لإغلاق معادلات الاتزان بدقة للمسافة الفارغة
                     if eff_h < m_L:
                         m_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(eff_h, 2), "LB (m)": round(m_L, 2)})
                         
                     if not m_loads_data:
                         m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": round(m_L, 2)}]
                 else: 
-                    m_w_calc = w_tot * m_spc
-                    m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_calc, 2), "WB (kN/m)": round(m_w_calc, 2), "LA (m) or X (m)": 0.0, "LB (m)": m_L}]
+                    m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": round(m_w_max, 2), "LA (m) or X (m)": 0.0, "LB (m)": m_L}]
                     
                 m_df = pd.DataFrame(m_loads_data)
                 m_loads_df = st.data_editor(
@@ -567,7 +590,8 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
             "s_cl": s_cl, "s_sp": s_spns, "s_cr": s_cr, "s_ld": s_loads_parsed, "s_sup": s_supports, 
             "s_ld_img": s_sketch_bytes, "m_sec": m_sec, "m_spc": m_spc, "m_L": m_L, "m_cl": m_cl, 
             "m_sp": m_spns, "m_cr": m_cr, "m_ld": m_loads_parsed, "m_sup": m_supports, 
-            "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al, "wall_pdf_curr": wall_pdf_curr
+            "m_ld_img": m_sketch_bytes, "t_name": t_nm, "t_allow": t_al, "wall_pdf_curr": wall_pdf_curr,
+            "m_load_method": m_load_method, "max_s_rxn": max_s_reaction
         })
     else:
         section_data.update({
