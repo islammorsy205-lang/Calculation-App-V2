@@ -17,7 +17,6 @@ def parse_loads_from_df(df):
     for _, row in df.iterrows():
         l_type = str(row.get("Load Type", "Linear")).strip()
 
-        # دالة ذكية لمنع انهيار البرنامج عند وجود خلايا فارغة أو None
         def safe_float(val, default=0.0):
             if pd.isna(val) or val is None:
                 return float(default)
@@ -213,7 +212,7 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
                     w_end = w1 + (w2 - w1) * (end_x - x1) / (x2 - x1) if x2 > x1 else w1
                     L_ld = end_x - x1
                     V[i] -= (w1 + w_end) / 2.0 * L_ld
-                    M[i] -= (w1 * L_ld * (x_pt - x1 - L_ld/2.0)) + (0.5 * (w_end - w1) * L_ld * (x_pt - x1 - L_ld/3.0))
+                    M[i] -= (w1 * L_ld * (x_pt - x1 - L_ld/2.0)) + (0.5 * (w_end - w1) * L_ld * (x_pt - x1 - 2.0 * L_ld / 3.0))
 
     return x, V, M, D, R
 
