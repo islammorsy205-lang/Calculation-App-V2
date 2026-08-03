@@ -3,6 +3,7 @@
 import os
 import io
 import gc
+import re
 from datetime import date
 import pandas as pd
 import numpy as np
@@ -64,6 +65,30 @@ with st.sidebar:
 # 3. Project Details UI
 # ==========================================
 proj_name, contractor, calc_sub, sys_name, proj_no, calc_by, date_val, chk_by, ref_code, cover_img, data_sheets, def_sec, def_main = render_project_details()
+
+# ==========================================
+# SMART INITIALS LOGIC (تعديل استخراج الحروف أوتوماتيكياً)
+# ==========================================
+# سحب الإيميل من الـ Query Params بناءً على ملف auth.py
+user_email = st.query_params.get("user", "")
+
+if not user_email:
+    if st.query_params.get("admin") == "acrow_master":
+        user_email = "islam.morsy@acrow.co"
+    elif hasattr(st, "experimental_user") and st.experimental_user.email:
+        user_email = st.experimental_user.email
+
+if user_email and '@' in user_email:
+    name_part = user_email.split('@')[0]
+    parts = name_part.split('.')
+    if len(parts) >= 2:
+        calc_by = f"Eng. {parts[0][0].upper()}.{parts[1][0].upper()}"
+    elif len(parts) == 1:
+        calc_by = f"Eng. {parts[0][0].upper()}"
+elif not calc_by or calc_by == "Eng. ":
+    calc_by = "Eng."
+# ==========================================
+
 def_live_load = 2.00 if "BS" in ref_code else 2.40
 
 # ==========================================
@@ -236,6 +261,45 @@ if generate_doc_btn:
             # ==========================================
             # Smart Find & Replace logic for Cover Page
             # ==========================================
+            
+            # 1. ERADICATE HARDCODED "CALCULATION SHEET FOR" FROM TEMPLATE
+            # نقوم بمسح الجملة المحفورة في الوورد تماماً لمنع أي تكرار مع الحفاظ على تنسيق الخط الأصلي
+            def remove_hardcoded_prefix(p):
+                if p.text and "CALCULATION SHEET FOR" in p.text.upper():
+                    for r in p.runs:
+                        if "CALCULATION SHEET FOR" in r.text.upper():
+                            r.text = re.sub(r'(?i)CALCULATION SHEET FOR\s*', '', r.text)
+                            
+                    if "CALCULATION SHEET FOR" in p.text.upper():
+                        clean_text = re.sub(r'(?i)CALCULATION SHEET FOR\s*', '', p.text)
+                        if p.runs:
+                            font_name = p.runs[0].font.name
+                            font_size = p.runs[0].font.size
+                            font_bold = p.runs[0].font.bold
+                            font_color = p.runs[0].font.color.rgb if p.runs[0].font.color else None
+                            
+                            for r in p.runs:
+                                r.text = ""
+                                
+                            p.runs[0].text = clean_text
+                            p.runs[0].font.name = font_name
+                            p.runs[0].font.size = font_size
+                            p.runs[0].font.bold = font_bold
+                            if font_color:
+                                p.runs[0].font.color.rgb = font_color
+                        else:
+                            p.text = clean_text
+
+            for p in doc.paragraphs:
+                remove_hardcoded_prefix(p)
+                
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    for cell in row.cells:
+                        for p in cell.paragraphs:
+                            remove_hardcoded_prefix(p)
+
+            # 2. INJECT NEW VARIABLES
             replacements = {
                 "[PROJECT_NAME]": proj_name,
                 "[CONTRACTOR]": contractor,
@@ -485,7 +549,7 @@ if generate_doc_btn:
                     
                     doc.add_page_break() 
 
-                    # 4. Support (التعديل الخاص بتفاصيل الـ Acrow Prop والـ Scaffolding)
+                    # 4. Support
                     if conf.get('t_allow') is not None and conf['t_allow'] < 900:
                         support_title = conf['t_name']
                         display_name = conf['t_name']
@@ -531,15 +595,11 @@ if generate_doc_btn:
                         add_eq(doc, f"For Push Pull {st_d['type'].split()[0]}", underline=True, color=RGBColor(192,0,0))
                         add_word_check(doc, "N (Pact. from Sap)", val_t, STRUTS_DB.get(st_d['type'], {}).get('allow', 999), "KN")
                         
-                    # التعديل: الاعتماد على الـ Tension المباشر للزرجينة بدلاً من الشير للـ Lower Soldier
                     doc.add_paragraph()
                     add_heading_14(doc, "- Check for Lower Soldier:")
                     add_eq(doc, f"- Each Strongback tied with two tie rods at spacing {sb.get('tie_h',0)*100:.0f}cm")
-                    
-                    # Fallback protection to avoid any KeyErrors
                     t_force = sb.get('tie_force_total', sb.get('tie_T_single', 0.0) * 2.0)
                     add_eq_highlight(doc, f"- Assign load on Soldier= ", f"{t_force:.2f} KN")
-                    
                     add_word_check(doc, "Check for Moment", sb['waler_M'], SECTIONS_DB[sb['waler_sec']]['Mall'], "KN.m")
                     
                     doc.add_paragraph()
@@ -696,7 +756,6 @@ if generate_doc_btn:
                         add_word_check(doc, "Max Shear per Bolt (Worst Base)", max_rx_base/2, 29.50, "KN")
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
 
-            # --- التعديل هنا: داتا شيت الهيلتي تظهر في حالة الحوائط أو الأعمدة فقط ---
             if "Vertical" in sys_cat and os.path.exists("Hilti_Bolt.pdf"):
                 doc.add_page_break()
                 append_pdf_stream_to_word("Hilti_Bolt.pdf", doc, is_path=True, max_width_cm=17.5, max_height_cm=24.0, add_border=False)
