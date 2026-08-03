@@ -191,10 +191,6 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
     R = [R_full[2*sn] for sn in sup_idx]
     D_fem = U[0::2] * 1000.0  
     
-    # =========================================================================
-    # 💡 الإصلاح الجذري: زرع نقاط متناهية الصغر (1e-5) قبل وبعد الركائز 
-    # لاصطياد قمم قوى القص (Shear) الحقيقية بدقة متناهية بدون أي (Clipping)
-    # =========================================================================
     x_eval_list = list(x_fem)
     for sx in supports_x:
         if sx > 1e-5: x_eval_list.append(sx - 1e-5)
@@ -208,7 +204,6 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
             
     x_eval = np.unique(np.sort(x_eval_list))
     
-    # Interpolation for Deflection (smooth curve)
     D = np.interp(x_eval, x_fem, D_fem)
     
     V = np.zeros_like(x_eval)
@@ -217,7 +212,6 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
     for i in range(len(x_eval)):
         x_pt = x_eval[i]
         for j, sx in enumerate(supports_x):
-            # نستخدم (1e-7) لضمان تفاعل رياضي مثالي مع النقطة المزروعة
             if x_pt > sx - 1e-7:
                 V[i] += R[j]
                 M[i] += R[j] * (x_pt - sx)
@@ -315,9 +309,10 @@ def solve_fea(nodes, elements, custom_loads, dist_loads):
             [0, 0, 0, c, s, 0], [0, 0, 0, -s, c, 0], [0, 0, 0, 0, 0, 1]
         ])
         
-        E = 210000000.0  
-        A = 0.005  
-        I = 0.00005  
+        # 💡 استدعاء الخصائص الفيزيائية الحقيقية من كائنات العناصر بدلاً من القيم الوهمية الثابتة
+        E = el.get('E', 210000000.0)  
+        A = el.get('A', 0.005)  
+        I = el.get('I', 0.00005)  
         
         if el['type'] == 'truss' or el['mem'] == 'Tie':
             k_loc = np.zeros((6, 6))
@@ -369,6 +364,11 @@ def solve_fea(nodes, elements, custom_loads, dist_loads):
             [0, 0, 0, el['c'], el['s'], 0], [0, 0, 0, -el['s'], el['c'], 0], [0, 0, 0, 0, 0, 1]
         ])
         u_loc = T @ u_glob
+        
+        # 💡 استدعاء نفس الخصائص الفيزيائية الحقيقية لاستخراج القوى الداخلية بدقة
+        E = el.get('E', 210000000.0)  
+        A = el.get('A', 0.005)  
+        I = el.get('I', 0.00005)  
         
         if el['type'] == 'truss' or el['mem'] == 'Tie':
             el['N_ax'] = (E * A / el['L']) * (u_loc[3] - u_loc[0])
