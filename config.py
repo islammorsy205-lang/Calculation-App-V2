@@ -46,6 +46,14 @@ SECTIONS_DB = {
 # 2. PUSH-PULL / STRUTS DATABASE
 # =========================================================
 STRUTS_DB = {
+    # Tilt Up Shore (Galv.)
+    "Tilt Up Shore X0 (1.04:1.83m)": {"min": 1.04, "max": 1.83, "allow": 25.0},
+    "Tilt Up Shore X1 (1.75:3.12m)": {"min": 1.75, "max": 3.12, "allow": 25.0},
+    "Tilt Up Shore X2 (1.98:3.35m)": {"min": 1.98, "max": 3.35, "allow": 25.0},
+    "Tilt Up Shore X3 (2.59:3.96m)": {"min": 2.59, "max": 3.96, "allow": 30.0},
+    "Tilt Up Shore X4 (3.20:4.88m)": {"min": 3.20, "max": 4.88, "allow": 35.0},
+    
+    # Existing PPH & PPS
     "PPH164 (1.10:1.64m)": {"min": 1.10, "max": 1.64, "allow": 35.0},
     "PPH203 (1.35:2.03m)": {"min": 1.35, "max": 2.03, "allow": 35.0},
     "PPH254 (1.61:2.54m)": {"min": 1.61, "max": 2.54, "allow": 35.0},
