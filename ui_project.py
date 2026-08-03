@@ -17,11 +17,8 @@ def render_project_details():
         contractor = st.text_input("Client / Contractor", "Main Contractor")
 
     with col2: 
-        # المستخدم بيدخل اسم العنصر فقط (مثال: Solid Slab أو Wall)
-        element_input = st.text_input("Structure Element", "Solid Slab")
-        
-        # يتم دمج الكلمة مع النص الثابت وتحويلها لحروف كبيرة أوتوماتيكياً
-        calc_subject = f"CALCULATION SHEET FOR {element_input.upper()}"
+        # الجملة بالكامل تظهر في الواجهة ويمكن للمستخدم تعديل الكلمة الأخيرة فقط براحته
+        calc_subject = st.text_input("Structure Element", "CALCULATION SHEET FOR SOLID SLAB")
         
         system_name = st.selectbox(
             "Formwork System Name", 
@@ -39,20 +36,27 @@ def render_project_details():
         proj_no = st.text_input("Project No.", "PRJ-2026")
         
         # اللوجيك المخفي لسحب الإيميل وتوليد اختصار الاسم (Calculated By)
-        user_email = st.session_state.get('user_email', '')
-        if user_email and '@' in user_email:
+        # أضفت بحث في أكتر من اسم متغير احتياطياً
+        user_email = st.session_state.get('user_email') or st.session_state.get('email') or st.session_state.get('username') or ""
+        
+        calc_by_initials = ""
+        if isinstance(user_email, str) and '@' in user_email:
             name_part = user_email.split('@')[0]
             parts = name_part.split('.')
             if len(parts) >= 2:
                 # سحب أول حرف من أول مقطعين وتكبيرهم (مثال: I.M)
-                calc_by = f"{parts[0][0].upper()}.{parts[1][0].upper()}"
+                calc_by_initials = f"{parts[0][0].upper()}.{parts[1][0].upper()}"
             elif len(parts) == 1:
                 # في حالة وجود اسم واحد فقط قبل علامة الـ @
-                calc_by = f"{parts[0][0].upper()}"
-            else:
-                calc_by = "Eng."
+                calc_by_initials = f"{parts[0][0].upper()}"
+        
+        # دمج الاختصار مع اللقب (مثال: Eng. I.M)
+        if calc_by_initials:
+            calc_by = f"Eng. {calc_by_initials}"
         else:
             calc_by = "Eng."
+            
+        # الخانة تم إخفاؤها من الواجهة تماماً وتعمل في الخلفية لترسل المتغير calc_by للطباعة
         
     date_val = date.today().strftime("%d/%m/%Y")
     chk_by = "Eng. M.F."
