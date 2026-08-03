@@ -362,16 +362,16 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
                 # ==============================================================================
-                # زرار الهيدروستاتيك مع مربع "المسافة الفاضية من أعلى الخشبة"
+                # التعديل الذكي لـ Hydrostatic Load بناءً على طلبك (Linear ثم Trapezoidal ثم Zero)
                 # ==============================================================================
                 col_tog_s, col_inp_s = st.columns([1.2, 1])
                 with col_tog_s:
-                    is_hydro_s = st.toggle("Apply Hydrostatic Load", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
+                    is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
                 
                 s_top_empty = 0.0
                 if is_hydro_s:
                     with col_inp_s:
-                        s_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(s_L), value=0.0, step=0.05, key=f"s_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة حتى بداية الخرسانة (المثلث)")
+                        s_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(s_L), value=0.0, step=0.05, key=f"s_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة")
 
                 if is_hydro_s: 
                     s_w_max = w_tot * s_spc
@@ -383,11 +383,16 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     
                     if h_const > 0:
                         s_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": round(s_w_max, 2), "LA (m) or X (m)": 0.0, "LB (m)": round(h_const, 2)})
-                    if h_static > 0 and eff_h > 0:
+                    
+                    if h_static > 0 and eff_h > h_const:
                         s_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
+                    # 💡 الإصلاح الجذري للمومنت: إجبار البرنامج على وضع حمل صفر للمسافة الفاضية
+                    if eff_h < s_L:
+                        s_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(eff_h, 2), "LB (m)": round(s_L, 2)})
+                        
                     if not s_loads_data:
-                        s_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": s_L}]
+                        s_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": round(s_L, 2)}]
                 else: 
                     s_w_calc = w_tot * s_spc
                     s_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": round(s_w_calc, 2), "WB (kN/m)": round(s_w_calc, 2), "LA (m) or X (m)": 0.0, "LB (m)": s_L}]
@@ -470,12 +475,12 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 # ==============================================================================
                 col_tog_m, col_inp_m = st.columns([1.2, 1])
                 with col_tog_m:
-                    is_hydro_m = st.toggle("Apply Hydrostatic Load", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
+                    is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
                 
                 m_top_empty = 0.0
                 if is_hydro_m:
                     with col_inp_m:
-                        m_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(m_L), value=0.0, step=0.05, key=f"m_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة حتى بداية الخرسانة (المثلث)")
+                        m_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(m_L), value=0.0, step=0.05, key=f"m_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة")
 
                 if is_hydro_m: 
                     m_w_max = w_tot * m_spc
@@ -485,11 +490,16 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     
                     if h_const > 0:
                         m_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": round(m_w_max, 2), "LA (m) or X (m)": 0.0, "LB (m)": round(h_const, 2)})
-                    if h_static > 0 and eff_h > 0:
+                    
+                    if h_static > 0 and eff_h > h_const:
                         m_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
+                    # 💡 الإصلاح الجذري للمومنت: إجبار البرنامج على وضع حمل صفر للمسافة الفاضية
+                    if eff_h < m_L:
+                        m_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(eff_h, 2), "LB (m)": round(m_L, 2)})
+                        
                     if not m_loads_data:
-                        m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": m_L}]
+                        m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": round(m_L, 2)}]
                 else: 
                     m_w_calc = w_tot * m_spc
                     m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_calc, 2), "WB (kN/m)": round(m_w_calc, 2), "LA (m) or X (m)": 0.0, "LB (m)": m_L}]
