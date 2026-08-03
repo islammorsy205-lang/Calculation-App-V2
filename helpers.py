@@ -4,6 +4,7 @@ import io
 import re
 from PIL import Image, ImageChops
 import streamlit as st
+import numpy as np
 from config import STRUTS_DB
 
 def crop_white_margins(img):
@@ -44,6 +45,22 @@ def get_idx(key_base, i, options_list, default_idx):
         return options_list.index(val_0)
     return default_idx
 
+def extract_images_from_pdf(pdf_file):
+    import fitz
+    images = []
+    try:
+        pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        for page_num in range(min(3, len(pdf_document))): 
+            page = pdf_document.load_page(page_num)
+            for img_index, img in enumerate(page.get_images(full=True)):
+                xref = img[0]
+                base_image = pdf_document.extract_image(xref)
+                images.append(base_image["image"])
+        pdf_file.seek(0)
+    except Exception:
+        pass
+    return images
+
 def get_best_image_match(subject, system, image_list):
     if not image_list: 
         return 0
@@ -63,33 +80,33 @@ def get_valid_struts(req_len, mode="wind"):
     valid = []
     for k, v in STRUTS_DB.items():
         if v['min'] <= req_len <= v['max']:
-            # في الستروونج باك مسموح ب PPH و PPS فقط كما طلبت
             if mode == "strongback":
                 if "PPH" in k or "PPS" in k: 
                     valid.append(k)
             else:
-                # في حالة الرياح مسموح بكل الأنواع
                 valid.append(k)
                 
     if not valid: 
-        return [f"No strut fits {req_len:.2f}m"]
+        return [f"No strut fits ({req_len:.2f}m)"]
     
     def sort_key(name):
         n_up = name.upper()
         score = 10
         
-        # الترتيب الذكي الجديد حسب حالتي التشغيل (Strongback أو Wind)
         if mode == "strongback":
             if "PPH" in n_up: score = 0
             elif "PPS" in n_up: score = 1
         else:
-            if "MPP" in n_up or "TILT" in n_up: score = 0
+            if "TILT" in n_up or "MPP" in n_up: score = 0
             elif "PPS" in n_up: score = 1
             elif "PPH" in n_up: score = 2
         
-        # الحفاظ على الكود القديم الهام: فلترة الأرقام الفردية وإعطائها أولوية أقل
         match = re.search(r'\d+', name.split()[0])
         if match and int(match.group()[-1]) in [1, 3, 5]:
+            score += 20
+        if "X1" in n_up or "X3" in n_up or "X5" in n_up:
+            score += 20
+        if "X4" in n_up:
             score += 20
             
         return (score, name)
