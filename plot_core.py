@@ -220,7 +220,7 @@ def generate_acrow_diagrams(section_name, L_total, supports_x, loads, E, I, Mall
     return img_stream.getvalue(), abs_max_M, abs_max_V, abs_max_D, np.max(R) if len(R)>0 else 0, all_def, def_txt
 
 # =========================================================================
-# دوال السترونج باك والـ SAP2000 (بدون Fill، دعامة 45 حقيقية، تهشير واسع، نصوص Arial)
+# دوال السترونج باك والـ SAP2000 (خطوط رفيعة، Roller اجباري في Wind)
 # =========================================================================
 
 def get_major_nodes(nodes, elements):
@@ -270,7 +270,7 @@ def draw_diagram_with_hatching(ax, x1, y1, c, s, L, vals, sc, color, is_moment=F
     by_out = y1 + dense_xs*s
     
     poly_pts = [[bx_out[i], by_out[i]] for i in range(len(dense_xs))] + [[px_out[i], py_out[i]] for i in range(len(dense_xs)-1, -1, -1)]
-    ax.add_patch(patches.Polygon(poly_pts, closed=True, fill=False, edgecolor=color, lw=1.2))
+    ax.add_patch(patches.Polygon(poly_pts, closed=True, fill=False, edgecolor=color, lw=0.6))
     
     num_hatches = max(3, int(L / 0.4))
     hatch_xs = np.linspace(0, L, num_hatches)
@@ -287,7 +287,7 @@ def draw_diagram_with_hatching(ax, x1, y1, c, s, L, vals, sc, color, is_moment=F
     by_h = y1 + hatch_xs*s
     
     for i in range(len(hatch_xs)):
-        ax.plot([bx_h[i], px_h[i]], [by_h[i], py_h[i]], color=color, lw=0.6, alpha=0.5)
+        ax.plot([bx_h[i], px_h[i]], [by_h[i], py_h[i]], color=color, lw=0.4, alpha=0.5)
         
     return px_out, py_out
 
@@ -299,13 +299,13 @@ def draw_truss_axial(ax, x1, y1, x2, y2, N, sc, color):
     px1, py1 = x1 + N*nx*sc, y1 + N*ny*sc
     px2, py2 = x2 + N*nx*sc, y2 + N*ny*sc
     
-    ax.add_patch(patches.Polygon([[x1,y1], [px1,py1], [px2,py2], [x2,y2]], closed=True, fill=False, edgecolor=color, lw=1.2))
+    ax.add_patch(patches.Polygon([[x1,y1], [px1,py1], [px2,py2], [x2,y2]], closed=True, fill=False, edgecolor=color, lw=0.6))
     
     num_hatches = max(3, int(L / 0.4))
     h_xs = np.linspace(x1, x2, num_hatches)
     h_ys = np.linspace(y1, y2, num_hatches)
     for i in range(num_hatches):
-        ax.plot([h_xs[i], h_xs[i] + N*nx*sc], [h_ys[i], h_ys[i] + N*ny*sc], color=color, lw=0.6, alpha=0.5)
+        ax.plot([h_xs[i], h_xs[i] + N*nx*sc], [h_ys[i], h_ys[i] + N*ny*sc], color=color, lw=0.4, alpha=0.5)
         
     angle = np.degrees(np.arctan2(y2-y1, x2-x1))
     if angle < -90: angle += 180
@@ -315,8 +315,7 @@ def draw_truss_axial(ax, x1, y1, x2, y2, N, sc, color):
     mid_y = (y1 + y2)/2 + (N*ny*sc)/2
     ax.text(mid_x, mid_y, f"{abs(N):.2f}", color=color, fontsize=7, ha='center', va='center', rotation=angle, fontname='Arial', fontweight='normal', bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.3))
 
-def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
-    has_tie = any(el['mem'] == 'Tie' for el in elements)
+def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False, corner_sup="Hinged"):
     valid_nodes = [n for n in nodes if not (n[0] < -0.1 and n[1] < -0.1)]
     if not valid_nodes: valid_nodes = nodes
     
@@ -334,7 +333,7 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
             
         x1, y1 = nodes[el['n1']][:2]
         x2, y2 = nodes[el['n2']][:2]
-        ax.plot([x1, x2], [y1, y2], color='blue', lw=1.0, zorder=1)
+        ax.plot([x1, x2], [y1, y2], color='blue', lw=0.6, zorder=1)
         
         if el['type'] == 'truss':
             angle = np.degrees(np.arctan2(y2-y1, x2-x1))
@@ -357,7 +356,7 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
     for idx in major_nodes:
         n = nodes[idx]
         if not (n[2] or n[3]): 
-            ax.plot(n[0], n[1], 'o', color='blue', markersize=3.5, zorder=3)
+            ax.plot(n[0], n[1], 'o', color='blue', markersize=3.0, zorder=3)
             
     for i, n in enumerate(nodes):
         if n[2] or n[3]:
@@ -366,44 +365,40 @@ def draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False):
             dy = -0.15 if not invert_y_axis else 0.15
             y_base = n[1]
             
-            # التعديل الإجباري: رسم الركيزة اللي عند (0,0) بزاوية 45 درجة (رولر أو هنجد)
             if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
                 theta = np.radians(-45)
                 c, s = np.cos(theta), np.sin(theta)
                 def rot(px, py): return px*c - py*s, px*s + py*c
                 
-                if has_tie: # Roller @ 45 deg
+                if corner_sup == "Roller":
                     p1, p2, p3 = rot(0,0), rot(-0.075,-0.12), rot(0.075,-0.12)
-                    ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
+                    ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=0.6))
                     c1, c2 = rot(-0.04, -0.135), rot(0.04, -0.135)
-                    ax.add_patch(plt.Circle((c1[0]+n[0], c1[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=1.5))
-                    ax.add_patch(plt.Circle((c2[0]+n[0], c2[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=1.5))
+                    ax.add_patch(plt.Circle((c1[0]+n[0], c1[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=0.6))
+                    ax.add_patch(plt.Circle((c2[0]+n[0], c2[1]+n[1]), 0.015, color='#00FF00', fill=False, lw=0.6))
                     l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
-                    ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
-                else: # Hinged @ 45 deg
+                    ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=0.6)
+                else:
                     p1, p2, p3 = rot(0,0), rot(-0.1,-0.15), rot(0.1,-0.15)
-                    ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=1.5))
+                    ax.add_patch(patches.Polygon([[p1[0]+n[0], p1[1]+n[1]], [p2[0]+n[0], p2[1]+n[1]], [p3[0]+n[0], p3[1]+n[1]]], fill=False, edgecolor='#00FF00', lw=0.6))
                     l1, l2 = rot(-0.15,-0.15), rot(0.15,-0.15)
-                    ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=1.5)
+                    ax.plot([l1[0]+n[0], l2[0]+n[0]], [l1[1]+n[1], l2[1]+n[1]], color='#00FF00', lw=0.6)
                 continue
 
             if n[2] and n[3]: 
-                ax.add_patch(patches.Polygon([[n[0], y_base], [n[0]-0.1, y_base+dy], [n[0]+0.1, y_base+dy]], fill=False, edgecolor='#00FF00', lw=1.5))
-                ax.plot([n[0]-0.15, n[0]+0.15], [y_base+dy, y_base+dy], color='#00FF00', lw=1.5)
+                ax.add_patch(patches.Polygon([[n[0], y_base], [n[0]-0.1, y_base+dy], [n[0]+0.1, y_base+dy]], fill=False, edgecolor='#00FF00', lw=0.6))
+                ax.plot([n[0]-0.15, n[0]+0.15], [y_base+dy, y_base+dy], color='#00FF00', lw=0.6)
             elif not n[2] and n[3]: 
-                ax.add_patch(patches.Polygon([[n[0], y_base], [n[0]-0.075, y_base+dy*0.8], [n[0]+0.075, y_base+dy*0.8]], fill=False, edgecolor='#00FF00', lw=1.5))
-                ax.add_patch(plt.Circle((n[0]-0.04, y_base+dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=1.5))
-                ax.add_patch(plt.Circle((n[0]+0.04, y_base+dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=1.5))
-                ax.plot([n[0]-0.15, n[0]+0.15], [y_base+dy, y_base+dy], color='#00FF00', lw=1.5)
+                ax.add_patch(patches.Polygon([[n[0], y_base], [n[0]-0.075, y_base+dy*0.8], [n[0]+0.075, y_base+dy*0.8]], fill=False, edgecolor='#00FF00', lw=0.6))
+                ax.add_patch(plt.Circle((n[0]-0.04, y_base+dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=0.6))
+                ax.add_patch(plt.Circle((n[0]+0.04, y_base+dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=0.6))
+                ax.plot([n[0]-0.15, n[0]+0.15], [y_base+dy, y_base+dy], color='#00FF00', lw=0.6)
 
-def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, scale_factor=1.0):
+def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
-    major_nodes = get_major_nodes(nodes, elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
-    # التعديل: تم مسح كل أرقام وإحداثيات النقط الجانبية (y_nodes_v و x_nodes_h) لعرض الأحمال فقط بشكل نظيف
-            
     if dist_loads:
         sc = (1.0 / max([max(abs(dl['w1']), abs(dl['w2'])) for dl in dist_loads] + [1])) * scale_factor
         for dl in dist_loads:
@@ -413,14 +408,14 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
             if w1 > 0 or w2 > 0:
                 hw1, hw2 = w1*sc, w2*sc
                 if w_dir == 'right':
-                    ax.add_patch(patches.Polygon([[0, y1], [-hw1, y1], [-hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.8))
+                    ax.add_patch(patches.Polygon([[0, y1], [-hw1, y1], [-hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.6))
                     for y_arr in np.linspace(y1, y2, 5):
                         w_arr = w1 + (w2-w1)*(y_arr-y1)/(y2-y1) if y2 > y1 else w1
                         ax.arrow(-w_arr*sc, y_arr, w_arr*sc - 0.05, 0, head_width=0.104, head_length=0.065, fc='blue', ec='blue', lw=0.5)
                     ax.text(-hw1, y1, f"{w1:.1f}", color='black', ha='right', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
                     if abs(y2 - y1) > 0.1: ax.text(-hw2, y2, f"{w2:.1f}", color='black', ha='right', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
                 else:
-                    ax.add_patch(patches.Polygon([[0, y1], [hw1, y1], [hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.8))
+                    ax.add_patch(patches.Polygon([[0, y1], [hw1, y1], [hw2, y2], [0, y2]], closed=True, fill=False, edgecolor='blue', lw=0.6))
                     for y_arr in np.linspace(y1, y2, 5):
                         w_arr = w1 + (w2-w1)*(y_arr-y1)/(y2-y1) if y2 > y1 else w1
                         ax.arrow(w_arr*sc, y_arr, -w_arr*sc + 0.05, 0, head_width=0.104, head_length=0.065, fc='blue', ec='blue', lw=0.5)
@@ -435,7 +430,7 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
             else:
                 arr_x_start = -0.6 if ld['p'] > 0 else 0.6
                 arr_len = 0.55 if ld['p'] > 0 else -0.55
-                ax.arrow(arr_x_start, ld['y'], arr_len, 0, head_width=0.104, head_length=0.065, fc='black', ec='black', lw=1.0)
+                ax.arrow(arr_x_start, ld['y'], arr_len, 0, head_width=0.104, head_length=0.065, fc='black', ec='black', lw=0.6)
                 ax.text(arr_x_start - 0.1 if ld['p'] > 0 else arr_x_start + 0.1, ld['y'], f"{abs(ld['p']):.2f}", color='black', ha='right' if ld['p'] > 0 else 'left', va='center', fontsize=7, fontname='Arial', fontweight='normal')
                 
     ax.autoscale_view()
@@ -445,10 +440,10 @@ def draw_sap_loads_single(nodes, elements, custom_loads=None, dist_loads=None, s
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_axial_single(nodes, elements, scale_factor=1.0):
+def draw_sap_axial_single(nodes, elements, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
     max_n = max([abs(el['N_ax']) for el in elements if el['type']=='truss'] + [abs(el['N'].mean()) for el in elements if el['type']=='frame'] + [1e-5])
     sc_n = (1.0 / max_n) * scale_factor
@@ -481,10 +476,10 @@ def draw_sap_axial_single(nodes, elements, scale_factor=1.0):
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_shear_single(nodes, elements, scale_factor=1.0):
+def draw_sap_shear_single(nodes, elements, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
     max_v = max([max(abs(el['V'])) for el in elements if el['type']=='frame'] + [1e-5])
     sc_v = (1.0 / max_v) * scale_factor
@@ -515,10 +510,10 @@ def draw_sap_shear_single(nodes, elements, scale_factor=1.0):
     plt.close(fig)
     return img.getvalue()
 
-def draw_sap_moment_single(nodes, elements, scale_factor=1.0):
+def draw_sap_moment_single(nodes, elements, scale_factor=1.0, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False)
+    draw_sap_base_frame(ax, nodes, elements, invert_y_axis=False, corner_sup=corner_sup)
     
     max_m = max([max(abs(el['M'])) for el in elements if el['type']=='frame'] + [1e-5])
     sc_m = (1.0 / max_m) * scale_factor
@@ -552,38 +547,36 @@ def draw_sap_moment_single(nodes, elements, scale_factor=1.0):
 def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
     fig, ax = plt.subplots(figsize=(6, 8))
     fig.patch.set_facecolor('white')
-    draw_sap_base_frame(ax, nodes, elements)
-    has_tie = any(el['mem'] == 'Tie' for el in elements)
+    draw_sap_base_frame(ax, nodes, elements, corner_sup=corner_sup)
     
     for i, n in enumerate(nodes):
-        # التعديل: تدوير الركيزة (Corner) واستخراج الـ Axial/Shear بناءً على حالة الـ Support بزاويتها الـ 45
         if abs(n[0]) < 1e-3 and abs(n[1]) < 1e-3:
             c, s = 0.70710678, 0.70710678
-            if not has_tie: # Hinged (يعرض Tension و Shear)
-                rx, ry = R_total[3*i], R_total[3*i+1]
+            rx, ry = R_total[3*i], R_total[3*i+1]
+            
+            if corner_sup == "Roller":
+                R_axial = rx * c + ry * s
+                R_shear = 0.0
+            else:
                 R_axial = rx * c + ry * s
                 R_shear = -rx * s + ry * c
-            else: # Roller (يعرض Tension فقط)
-                tie_el = next((e for e in elements if e['mem'] == 'Tie'), None)
-                R_axial = tie_el['N_ax'] if tie_el else 0.0
-                R_shear = 0.0
             
             if abs(R_axial) > 0.1:
                 nx, ny = -c, -s
                 mag = abs(R_axial)
                 sign = np.sign(R_axial) if R_axial != 0 else 1
-                tail_x = -0.25 * nx * sign
-                tail_y = -0.25 * ny * sign
-                ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                tail_x = -0.30 * nx * sign
+                tail_y = -0.30 * ny * sign
+                ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=0.8, mutation_scale=12))
                 ax.text(tail_x*1.5+n[0], tail_y*1.5+n[1], f"{mag:.2f}", color='black', rotation=45, ha='center', va='center', fontsize=8, fontname='Arial')
                 
             if abs(R_shear) > 0.1:
                 nx, ny = s, -c
                 mag = abs(R_shear)
                 sign = np.sign(R_shear) if R_shear != 0 else 1
-                tail_x = -0.25 * nx * sign
-                tail_y = -0.25 * ny * sign
-                ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                tail_x = -0.30 * nx * sign
+                tail_y = -0.30 * ny * sign
+                ax.annotate("", xy=(n[0], n[1]), xytext=(tail_x+n[0], tail_y+n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=0.8, mutation_scale=12))
                 ax.text(tail_x*1.5+n[0], tail_y*1.5+n[1], f"{mag:.2f}", color='black', rotation=-45, ha='center', va='center', fontsize=8, fontname='Arial')
             continue
 
@@ -592,12 +585,12 @@ def draw_sap_rxn_single(nodes, elements, R_total, corner_sup="Hinged"):
             if abs(ry) > 0.1:
                 dy_arr = -0.25 if ry > 0 else 0.25
                 text_dy = -0.35 if ry > 0 else 0.35
-                ax.annotate("", xy=(n[0], n[1]), xytext=(n[0], n[1]+dy_arr), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                ax.annotate("", xy=(n[0], n[1]), xytext=(n[0], n[1]+dy_arr), arrowprops=dict(arrowstyle="-|>", color='black', lw=0.8, mutation_scale=12))
                 ax.text(n[0], n[1]+text_dy, f"{abs(ry):.2f}", color='black', ha='center', va='top' if ry>0 else 'bottom', fontsize=8, fontname='Arial', fontweight='normal')
             if abs(rx) > 0.1:
                 dx_arr = -0.25 if rx > 0 else 0.25
                 text_dx = -0.35 if rx > 0 else 0.35
-                ax.annotate("", xy=(n[0], n[1]), xytext=(n[0]+dx_arr, n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+                ax.annotate("", xy=(n[0], n[1]), xytext=(n[0]+dx_arr, n[1]), arrowprops=dict(arrowstyle="-|>", color='black', lw=0.8, mutation_scale=12))
                 ax.text(n[0]+text_dx, n[1], f"{abs(rx):.2f}", color='black', ha='right' if rx>0 else 'left', va='center', fontsize=8, fontname='Arial', fontweight='normal')
                 
     ax.autoscale_view()
@@ -642,15 +635,15 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
             
     def draw_roller(ax, x, y):
         dy = -0.15 
-        ax.add_patch(patches.Polygon([[x, 0], [x-0.075, dy*0.8], [x+0.075, dy*0.8]], fill=False, edgecolor='#00FF00', lw=1.5))
-        ax.add_patch(plt.Circle((x-0.04, dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=1.5))
-        ax.add_patch(plt.Circle((x+0.04, dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=1.5))
-        ax.plot([x-0.15, x+0.15], [dy, dy], color='#00FF00', lw=1.5)
+        ax.add_patch(patches.Polygon([[x, 0], [x-0.075, dy*0.8], [x+0.075, dy*0.8]], fill=False, edgecolor='#00FF00', lw=0.6))
+        ax.add_patch(plt.Circle((x-0.04, dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=0.6))
+        ax.add_patch(plt.Circle((x+0.04, dy*0.9), abs(dy*0.1), color='#00FF00', fill=False, lw=0.6))
+        ax.plot([x-0.15, x+0.15], [dy, dy], color='#00FF00', lw=0.6)
         
     def draw_hinge(ax, x, y):
         dy = -0.15
-        ax.add_patch(patches.Polygon([[x, 0], [x-0.1, dy], [x+0.1, dy]], fill=False, edgecolor='#00FF00', lw=1.5))
-        ax.plot([x-0.15, x+0.15], [dy, dy], color='#00FF00', lw=1.5)
+        ax.add_patch(patches.Polygon([[x, 0], [x-0.1, dy], [x+0.1, dy]], fill=False, edgecolor='#00FF00', lw=0.6))
+        ax.plot([x-0.15, x+0.15], [dy, dy], color='#00FF00', lw=0.6)
 
     def add_strut_text(ax, x_b, y_att, text, color='#555555', fontsize=7, offset_dist=0.12):
         angle = np.degrees(np.arctan2(-y_att, x_b))
@@ -664,21 +657,23 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
     def draw_bracket(ax, show_ll=True, show_forces=True):
         if bkt_data and bkt_data.get('active'):
             yt, yb, L1, LL = bkt_data['y_top'], bkt_data['y_bot'], bkt_data['L1'], bkt_data['LL']
-            ax.plot([0, L1], [yt, yt], color='#008080', lw=1.5)
-            ax.plot([L1, 0], [yt, yb], color='#008080', lw=1.5)
+            ax.plot([0, L1], [yt, yt], color='#008080', lw=0.6)
+            ax.plot([L1, 0], [yt, yb], color='#008080', lw=0.6)
             if show_ll:
-                ax.plot([0, L1], [yt + 0.3, yt + 0.3], color='#0055FF', lw=1.0)
-                ax.plot([L1, L1], [yt, yt + 0.3], color='#0055FF', lw=1.0)
+                ax.plot([0, L1], [yt + 0.3, yt + 0.3], color='#0055FF', lw=0.6)
+                ax.plot([L1, L1], [yt, yt + 0.3], color='#0055FF', lw=0.6)
                 for x_arr in np.arange(0, L1 + 0.01, 0.20):
                     ax.arrow(x_arr, yt + 0.3, 0, -0.25, head_width=0.104, head_length=0.065, fc='black', ec='black', lw=0.6)
                 ax.text(L1/2, yt + 0.35, f"L.L = {LL} kN/m²", color='black', ha='center', va='bottom', fontsize=7, fontname='Arial', fontweight='normal')
 
     def setup_common_ax(ax):
-        b_xmin, b_xmax = -2.5, max_x + 1.5
+        b_xmin, b_xmax = -1.5, max_x + 1.5
         if bkt_data and bkt_data.get('active'): b_xmax = max(b_xmax, bkt_data['L1'] + 1.0)
         ax.plot([b_xmin, b_xmax], [-0.8, H + 0.5], alpha=0.0)
-        ax.plot([0, 0], [0, H], 'k-', lw=1.5) 
+        ax.plot([0, 0], [0, H], 'k-', lw=0.6) 
         ax.text(-0.15, H/2, 'Panel', rotation=90, color='#555555', ha='center', va='center', fontsize=7, fontname='Arial', fontweight='normal')
+        
+        # التعديل الإجباري للرياح: دايماً Roller
         draw_roller(ax, 0, 0)
         for bx in list(total_Rx.keys()):
             if any(st['x_base'] == bx and st.get('support') == 'Hinged' for st in struts): draw_hinge(ax, bx, 0)
@@ -692,21 +687,11 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
     setup_common_ax(ax1)
     
     for y in np.linspace(0, H, max(5, int(H*1.5))): ax1.arrow(-0.8, y, 0.7, 0, head_width=0.104, head_length=0.065, fc='black', ec='black', lw=0.6)
-    ax1.plot([-0.8, -0.8], [0, H], 'k-', lw=1.0)
+    ax1.plot([-0.8, -0.8], [0, H], 'k-', lw=0.6)
     ax1.text(-0.4, H + 0.2, f"W = {w_dist:.2f} kN/m'", color='black', ha='center', fontsize=9, fontname='Arial', fontweight='normal')
-    draw_dim(ax1, -2.0, 0, -2.0, H, f"{H:.2f}m", is_vertical=True, fontsize=7)
-    
-    for i in range(len(y_pts)-1):
-        if y_pts[i+1] - y_pts[i] > 0.05: draw_dim(ax1, -1.4, y_pts[i], -1.4, y_pts[i+1], f"{y_pts[i+1]-y_pts[i]:.2f}m", is_vertical=True)
-            
-    sorted_x_pts = sorted(list(total_Rx.keys()))
-    if sorted_x_pts:
-        draw_dim(ax1, 0, -0.4, sorted_x_pts[0], -0.4, f"{sorted_x_pts[0]:.2f}m")
-        for i in range(len(sorted_x_pts)-1):
-            if sorted_x_pts[i+1] - sorted_x_pts[i] > 0.05: draw_dim(ax1, sorted_x_pts[i], -0.4, sorted_x_pts[i+1], -0.4, f"{sorted_x_pts[i+1]-sorted_x_pts[i]:.2f}m")
     
     for st_c in struts:
-        ax1.plot([0, st_c['x_base']], [st_c['y'], 0], '#E10000', lw=1.2)
+        ax1.plot([0, st_c['x_base']], [st_c['y'], 0], '#E10000', lw=0.6)
         add_strut_text(ax1, st_c['x_base'], st_c['y'], st_c['type'].split()[0] if "No strut" not in st_c['type'] else "Invalid")
         
     draw_bracket(ax1, show_ll=True, show_forces=False)
@@ -722,11 +707,11 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
     for st_c in struts:
         y_att, x_b, N_val = st_c['y'], st_c['x_base'], st_c['N']
         L = np.sqrt(x_b**2 + y_att**2)
-        ax2.plot([0, x_b], [y_att, 0], '#E10000', lw=1.2)
+        ax2.plot([0, x_b], [y_att, 0], '#E10000', lw=0.6)
         if L > 0:
             scale = 0.5 
             nx, ny = y_att/L, x_b/L
-            ax2.add_patch(patches.Polygon([[0, y_att], [scale*nx, y_att+scale*ny], [x_b+scale*nx, scale*ny], [x_b, 0]], closed=True, fill=False, edgecolor='black', lw=1))
+            ax2.add_patch(patches.Polygon([[0, y_att], [scale*nx, y_att+scale*ny], [x_b+scale*nx, scale*ny], [x_b, 0]], closed=True, fill=False, edgecolor='black', lw=0.6))
             num_lines = max(5, int(L/0.4))
             for i in range(1, num_lines + 1):
                 t = i / (num_lines + 1)
@@ -748,14 +733,14 @@ def draw_tilting_diagrams(H, struts, w_dist, bkt_data=None, transparent_bg=False
     setup_common_ax(ax3)
     
     for st_c in struts:
-        ax3.plot([0, st_c['x_base']], [st_c['y'], 0], '#E10000', lw=1.2)
+        ax3.plot([0, st_c['x_base']], [st_c['y'], 0], '#E10000', lw=0.6)
         add_strut_text(ax3, st_c['x_base'], st_c['y'], st_c['type'].split()[0] if "No strut" not in st_c['type'] else "Invalid")
 
     for bx, rx in total_Rx.items():
         ry = total_Ry[bx]
-        ax3.annotate("", xy=(bx - 0.25, -0.1), xytext=(bx, -0.1), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+        ax3.annotate("", xy=(bx - 0.25, -0.1), xytext=(bx, -0.1), arrowprops=dict(arrowstyle="-|>", color='black', lw=0.8, mutation_scale=12))
         ax3.text(bx - 0.35, -0.1, f"{rx:.2f}", color='black', fontsize=9, ha='right', va='center', fontname='Arial', fontweight='normal')
-        ax3.annotate("", xy=(bx + 0.1, 0.25), xytext=(bx + 0.1, 0), arrowprops=dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=15))
+        ax3.annotate("", xy=(bx + 0.1, 0.25), xytext=(bx + 0.1, 0), arrowprops=dict(arrowstyle="-|>", color='black', lw=0.8, mutation_scale=12))
         ax3.text(bx + 0.2, 0.35, f"{ry:.2f}", color='black', fontsize=9, ha='left', va='center', rotation=90, fontname='Arial', fontweight='normal')
 
     draw_bracket(ax3, show_ll=False, show_forces=False)
