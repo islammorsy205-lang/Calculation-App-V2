@@ -17,8 +17,12 @@ def render_project_details():
         contractor = st.text_input("Client / Contractor", "Main Contractor")
 
     with col2: 
-        # تم تغيير القيمة الافتراضية لتتناسب مع التمبلت الجديد
-        calc_subject = st.text_input("Structure Element", "Solid Slab")
+        # المستخدم بيدخل اسم العنصر فقط (مثال: Solid Slab أو Wall)
+        element_input = st.text_input("Structure Element", "Solid Slab")
+        
+        # يتم دمج الكلمة مع النص الثابت وتحويلها لحروف كبيرة أوتوماتيكياً
+        calc_subject = f"CALCULATION SHEET FOR {element_input.upper()}"
+        
         system_name = st.selectbox(
             "Formwork System Name", 
             SHORING_OPTIONS_SLAB + [
@@ -33,7 +37,22 @@ def render_project_details():
 
     with col3: 
         proj_no = st.text_input("Project No.", "PRJ-2026")
-        calc_by = st.text_input("Calculated By", "Eng. ")
+        
+        # اللوجيك المخفي لسحب الإيميل وتوليد اختصار الاسم (Calculated By)
+        user_email = st.session_state.get('user_email', '')
+        if user_email and '@' in user_email:
+            name_part = user_email.split('@')[0]
+            parts = name_part.split('.')
+            if len(parts) >= 2:
+                # سحب أول حرف من أول مقطعين وتكبيرهم (مثال: I.M)
+                calc_by = f"{parts[0][0].upper()}.{parts[1][0].upper()}"
+            elif len(parts) == 1:
+                # في حالة وجود اسم واحد فقط قبل علامة الـ @
+                calc_by = f"{parts[0][0].upper()}"
+            else:
+                calc_by = "Eng."
+        else:
+            calc_by = "Eng."
         
     date_val = date.today().strftime("%d/%m/%Y")
     chk_by = "Eng. M.F."
