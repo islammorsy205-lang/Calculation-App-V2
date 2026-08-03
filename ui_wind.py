@@ -18,21 +18,33 @@ def render_wind_tilting_ui(i, h_panel, w_tot):
         current_h = st.session_state.get(f"hp_wind_{i}", h_panel)
         if st.session_state.get(f"last_h_{i}") != current_h:
             st.session_state[f"last_h_{i}"] = current_h
-            st.session_state[f"y1_{i}"] = 0.50
-            st.session_state[f"x1_{i}"] = 1.35  
             
-            if current_h <= 6.5:
+            # حسابات ديناميكية للارتفاعات عشان متضربش أبداً
+            st.session_state[f"y1_{i}"] = 0.50
+            if current_h <= 4.5:
                 st.session_state[f"rb_num_props_{i}"] = 2
-                st.session_state[f"y2_{i}"] = round(current_h - (current_h / 3.0), 2)
-                st.session_state[f"x2_{i}"] = round(st.session_state[f"y2_{i}"] / 1.732, 2)
+                y2_val = current_h * 0.80
+                st.session_state[f"y2_{i}"] = round(y2_val, 2)
+                st.session_state[f"x2_{i}"] = round(y2_val / 1.5, 2)
+                st.session_state[f"y3_{i}"] = 0.0
+                st.session_state[f"x3_{i}"] = 0.0
+            elif current_h <= 6.5:
+                st.session_state[f"rb_num_props_{i}"] = 2
+                y2_val = current_h * 0.75
+                st.session_state[f"y2_{i}"] = round(y2_val, 2)
+                st.session_state[f"x2_{i}"] = round(y2_val / 1.5, 2)
                 st.session_state[f"y3_{i}"] = 0.0
                 st.session_state[f"x3_{i}"] = 0.0
             else:
                 st.session_state[f"rb_num_props_{i}"] = 3
-                st.session_state[f"y2_{i}"] = round(current_h / 2.0, 2)
-                st.session_state[f"x2_{i}"] = round(st.session_state[f"y2_{i}"] / 1.732, 2)
-                st.session_state[f"y3_{i}"] = round(current_h - (current_h / 6.0), 2)
-                st.session_state[f"x3_{i}"] = round(st.session_state[f"y3_{i}"] / 1.732, 2)
+                y2_val = current_h * 0.45
+                y3_val = current_h * 0.85
+                st.session_state[f"y2_{i}"] = round(y2_val, 2)
+                st.session_state[f"x2_{i}"] = round(y2_val / 1.5, 2)
+                st.session_state[f"y3_{i}"] = round(y3_val, 2)
+                st.session_state[f"x3_{i}"] = round(y3_val / 1.5, 2)
+                
+            st.session_state[f"x1_{i}"] = st.session_state[f"x2_{i}"]
                 
         cw1, cw2, cw3, cw4 = st.columns(4)
         with cw1:
@@ -59,7 +71,6 @@ def render_wind_tilting_ui(i, h_panel, w_tot):
             with ts_1:
                 inc_bracket = st.toggle("Include Access Bracket", value=False, key=f"inc_bkt_{i}")
                 
-                # إخفاء/إظهار الداتا الخاصة بالبراكت بناءً على زر التفعيل
                 acc_L1, acc_L2, acc_LL = 0.90, 1.00, 1.50
                 if inc_bracket:
                     st.markdown("**Access Bracket Forces:**")
@@ -71,11 +82,9 @@ def render_wind_tilting_ui(i, h_panel, w_tot):
                 num_props = st.radio("Number of Push-Pulls:", [2, 3], key=f"rb_num_props_{i}", horizontal=True)
                 struts_conf = []
                 col_g1, col_g2 = st.columns(2)
-                # دالة المزامنة الذكية: أي تغيير في X2 يُطبق فوراً على X1
                 def sync_x1():
                     st.session_state[f"x1_{i}"] = st.session_state[f"x2_{i}"]
 
-                # أمر إجباري لمرة واحدة لمسح الكاش القديم وتطبيق التوحيد
                 if f"sync_forced_{i}" not in st.session_state:
                     st.session_state[f"x1_{i}"] = st.session_state.get(f"x2_{i}", 2.31)
                     st.session_state[f"sync_forced_{i}"] = True
@@ -86,7 +95,6 @@ def render_wind_tilting_ui(i, h_panel, w_tot):
                     y3 = st.number_input("Y3 (m)", value=6.67, key=f"y3_{i}", step=0.05) if num_props == 3 else 0.0
                 with col_g2:
                     x1 = st.number_input("X1 (m)", value=2.31, key=f"x1_{i}", step=0.05)
-                    # إضافة on_change لتحديث X1 أوتوماتيكياً عند تعديل X2
                     x2 = st.number_input("X2 (m)", value=2.31, key=f"x2_{i}", step=0.05, on_change=sync_x1)
                     x3 = st.number_input("X3 (m)", value=3.85, key=f"x3_{i}", step=0.05) if num_props == 3 else 0.0
                 
