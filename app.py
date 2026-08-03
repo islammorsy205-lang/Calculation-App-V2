@@ -248,7 +248,6 @@ if generate_doc_btn:
     elif not os.path.exists("Acrow_Template.docx"): 
         st.error("❌ Template file 'Acrow_Template.docx' not found.")
     else:
-        # التعديل الجذري: إيقاف البرنامج بالكامل عن استخراج التقرير في حال وجود أي قطاع غير آمن
         if not perform_global_safety_check(configs): 
             st.error("❌ **Report Generation Rejected:** One or more structural components are UNSAFE. Please review the 'Pre-Check Safety' results and fix the failing elements before generating the calculation sheet.")
             st.stop()
@@ -518,7 +517,6 @@ if generate_doc_btn:
                     add_eq(doc, f"- Main Beam length = {conf['m_L']:.2f} m")
                     add_eq(doc, f"- Max. Span of main {conf['m_sec'].split()[0]} = {max_m_span:.2f} m")
                     
-                    # التعديل الخاص بطباعة معادلة الحمل الخطي للمين حسب الاختيار (Reaction vs Surface Pressure)
                     if "Secondary Reaction" in conf.get("m_load_method", ""):
                         max_s = conf.get("max_s_rxn", 0.0)
                         m_w_calc = max_s / conf['s_spc'] if conf['s_spc'] > 0 else 0.0
@@ -763,8 +761,24 @@ if generate_doc_btn:
                         add_word_check(doc, "Revit Pin Shear Check", td.get('max_n', 0), 80.00, "KN")
                         add_word_check(doc, "Max Shear per Bolt (Worst Base)", max_rx_base/2, 29.50, "KN")
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
+                        
+                        # =========================================================================
+                        # 💡 التعديل المطلوب: زراعة النص الأحمر الخاص بالمسامير بخط Arial 12 وفي المنتصف
+                        # =========================================================================
+                        p_red = doc.add_paragraph()
+                        p_red.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p_red.paragraph_format.line_spacing = 1.5
+                        run_red = p_red.add_run("According to these Loads Use for each Double Base Plate\n2 (HUS3 Screw anchor) M 14X115\nWhich are mentioned in attached reference.\nor use any equivalent bolts.")
+                        run_red.font.name = 'Arial'
+                        run_red.font.size = Pt(12)
+                        run_red.font.color.rgb = RGBColor(255, 0, 0)
 
-            if "Vertical" in sys_cat and os.path.exists("Hilti_Bolt.pdf"):
+            # =========================================================================
+            # 💡 التعديل المطلوب: وضع ملف Hilti_Bolt.pdf في آخر النوتة للأعمدة والحوائط المزدوجة فقط
+            # =========================================================================
+            has_double_sided_or_column = any((c.get('cat') == 'vertical' and not c.get('strongback', {}).get('active')) for c in configs)
+            
+            if "Vertical" in sys_cat and has_double_sided_or_column and os.path.exists("Hilti_Bolt.pdf"):
                 doc.add_page_break()
                 append_pdf_stream_to_word("Hilti_Bolt.pdf", doc, is_path=True, max_width_cm=17.5, max_height_cm=24.0, add_border=False)
                 
