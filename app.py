@@ -67,9 +67,8 @@ with st.sidebar:
 proj_name, contractor, calc_sub, sys_name, proj_no, calc_by, date_val, chk_by, ref_code, cover_img, data_sheets, def_sec, def_main = render_project_details()
 
 # ==========================================
-# SMART INITIALS LOGIC (تعديل استخراج الحروف أوتوماتيكياً)
+# SMART INITIALS LOGIC 
 # ==========================================
-# سحب الإيميل من الـ Query Params بناءً على ملف auth.py
 user_email = st.query_params.get("user", "")
 
 if not user_email:
@@ -89,7 +88,8 @@ elif not calc_by or calc_by == "Eng. ":
     calc_by = "Eng."
 # ==========================================
 
-def_live_load = 2.00 if "BS" in ref_code else 2.40
+# التعديل المطلوب: الكود البريطاني = 1.50، والأمريكي = 2.40
+def_live_load = 1.50 if "BS" in ref_code else 2.40
 
 # ==========================================
 # 4. Structural System Configurator
@@ -261,9 +261,6 @@ if generate_doc_btn:
             # ==========================================
             # Smart Find & Replace logic for Cover Page
             # ==========================================
-            
-            # 1. ERADICATE HARDCODED "CALCULATION SHEET FOR" FROM TEMPLATE
-            # نقوم بمسح الجملة المحفورة في الوورد تماماً لمنع أي تكرار مع الحفاظ على تنسيق الخط الأصلي
             def remove_hardcoded_prefix(p):
                 if p.text and "CALCULATION SHEET FOR" in p.text.upper():
                     for r in p.runs:
