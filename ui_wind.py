@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import io
 from helpers import get_val, get_idx, convert_transparent_to_pdf_stream, get_valid_struts, get_strut_allowable
-from math_solver import get_kz, solve_beam_advanced
+from math_solver import get_kz, solve_beam_advanced, solve_fea
 from plot_core import draw_tilting_diagrams
 
 def render_wind_tilting_ui(i, h_panel, w_tot):
@@ -238,38 +238,85 @@ def render_wind_tilting_ui(i, h_panel, w_tot):
                 
             with ts_2:
                 if length_is_safe:
-                    loads_w = [
-                        {'type': 'linear', 'w1': w_dist, 'w2': w_dist, 'x1': 0, 'x2': h_panel}
-                    ]
                     
+                    # =========================================================================
+                    # 💡 التحليل المتقدم للمنظومة كإطار ثنائي الأبعاد (2D Frame FEA)
+                    # =========================================================================
+                    panel_y = set([0.0, h_panel])
+                    for st_c in struts_conf: panel_y.add(st_c['y'])
                     if bkt_data['active']:
-                        loads_w.extend([
-                            {'type': 'point', 'p': bkt_data['F'], 'x': bkt_data['y_top']}, 
-                            {'type': 'point', 'p': -bkt_data['F'], 'x': bkt_data['y_bot']}
-                        ])
+                        panel_y.add(bkt_data['y_top'])
+                        panel_y.add(bkt_data['y_bot'])
+                    panel_y = sorted(list(panel_y))
                     
-                    supports_w = [0.0] + [st_c['y'] for st_c in struts_conf]
+                    nodes = []
+                    panel_node_map = {}
+                    for y in panel_y:
+                        # 💡 السر الهندسي الأول: ركيزة الحائط السفلية (Roller Support)
+                        # حرة الحركة أفقياً في اتجاه X للزحلقة مع الرياح، ومقيدة رأسياً في اتجاه Y
+                        fix_x = False
+                        fix_y = True if y == 0.0 else False
+                        nodes.append([0.0, y, fix_x, fix_y, False])
+                        panel_node_map[y] = len(nodes) - 1
+                        
+                    elements = []
+                    # 💡 السر الهندسي الثاني: إدراج الخصائص الفيزيائية الحقيقية (Soldier U100)
+                    # ليعمل كـ Rigid Plank ويرفض الانحناء تماماً كبيئة الساب
+                    panel_E = 210000000.0   # Steel E
+                    panel_A = 0.00343       # Area m2 (U100)
+                    panel_I = 0.00000122    # Inertia m4 (U100)
                     
-                    try: 
-                        _, _, _, _, R_wind = solve_beam_advanced(h_panel, supports_w, loads_w, 21000, 1000)
-                    except Exception: 
-                        R_wind = [0] * (len(supports_w) + 1)
-                    
-                    for idx, st_c in enumerate(struts_conf):
-                        y_att = st_c['y']
+                    for i_n in range(len(panel_y)-1):
+                        elements.append({
+                            'n1': panel_node_map[panel_y[i_n]], 
+                            'n2': panel_node_map[panel_y[i_n+1]], 
+                            'mem': 'V', 'type': 'frame',
+                            'E': panel_E, 'A': panel_A, 'I': panel_I
+                        })
+                        
+                    strut_base_nodes = {}
+                    for st_c in struts_conf:
                         x_b = st_c['x_base']
-                        
-                        if (idx+1) < len(R_wind):
-                            R_att = abs(R_wind[idx+1])
-                        else:
-                            R_att = 0
+                        if x_b not in strut_base_nodes:
+                            # 💡 السر الهندسي الثالث: ركيزة الشدادات الأرضية (Hinged Support)
+                            # مقيدة في X و Y لتمتص 100% من القص الأفقي الناتج عن الرياح
+                            nodes.append([x_b, 0.0, True, True, False])
+                            strut_base_nodes[x_b] = len(nodes) - 1
                             
-                        L_st = np.sqrt(x_b**2 + y_att**2)
+                        n_base = strut_base_nodes[x_b]
+                        n_panel = panel_node_map[st_c['y']]
                         
-                        if x_b > 0:
-                            st_c['N'] = R_att * (L_st / x_b)
-                        else:
-                            st_c['N'] = 0
+                        # 💡 الخصائص الفيزيائية للشدادات (Push-Pulls)
+                        strut_E = 210000000.0
+                        strut_A = 0.0010    # Approx Area m2
+                        strut_I = 0.0000010
+                        
+                        elements.append({
+                            'n1': n_base, 'n2': n_panel, 'mem': 'Tie', 'type': 'truss',
+                            'E': strut_E, 'A': strut_A, 'I': strut_I, 'sec': st_c['type'].split()[0]
+                        })
+                        
+                    dist_loads = [{'y1': 0.0, 'y2': h_panel, 'w1': w_dist, 'w2': w_dist}]
+                    custom_loads = []
+                    if bkt_data['active']:
+                        custom_loads.append({'y': bkt_data['y_top'], 'p': bkt_data['F']})
+                        custom_loads.append({'y': bkt_data['y_bot'], 'p': -bkt_data['F']})
+                        
+                    try:
+                        # حل المنظومة الجاسئة باستخدام FEA Solver المتطور
+                        R_fea, U_fea = solve_fea(nodes, elements, custom_loads, dist_loads)
+                    except Exception:
+                        R_fea = np.zeros(len(nodes)*3)
+                        
+                    # تعيين قوى الشد والضغط بدقة متناهية من استجابة النظام الجاسيء
+                    for idx, st_c in enumerate(struts_conf):
+                        n_panel = panel_node_map[st_c['y']]
+                        n_base = strut_base_nodes[st_c['x_base']]
+                        st_c['N'] = 0.0
+                        for el in elements:
+                            if el['type'] == 'truss' and el['n1'] == n_base and el['n2'] == n_panel:
+                                st_c['N'] = abs(el.get('N_ax', 0.0))
+                                break
                         
                     img_w_bytes, img_n_bytes, img_r_bytes, max_rx_base, max_ry_base, max_n = draw_tilting_diagrams(
                         h_panel, 
