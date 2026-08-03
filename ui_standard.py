@@ -277,7 +277,6 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
     
     st.markdown("### 🧱 Concrete Pressure Configuration")
     
-    # تم التعديل هنا: إضافة حقل صريح لـ Pour Height لحل مشكلة توقيع الضغط بشكل دقيق
     col_w1, col_w2, col_w3, col_w4 = st.columns(4)
     with col_w1:
         st.link_button("🔗 Open Acrow Concrete Pressure Calculator", "https://acrow-sdt.github.io/pressure-calculator/")
@@ -368,17 +367,29 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
             with col_s2:
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
-                # التعديل الذكي لـ Hydrostatic Load بناءً على كود DIN 18218 (Linear ثم Trapezoidal)
-                is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
+                # ==============================================================================
+                # التعديل الذكي لـ Hydrostatic Load بناءً على طلبك لمنحنى DIN 18218 (Linear ثم Trapezoidal)
+                # ==============================================================================
+                c_tog_s, c_inp_s = st.columns([1.5, 1])
+                with c_tog_s:
+                    is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
+                with c_inp_s:
+                    s_top_empty = 0.0
+                    if is_hydro_s:
+                        s_top_empty = st.number_input("Top Empty Dist (m)", value=0.0, step=0.05, key=f"s_top_empty_{i}")
+
                 if is_hydro_s: 
                     s_w_max = w_tot * s_spc
-                    h_const = max(0.0, wall_h - h_static)
+                    # حساب الارتفاع الفعلي للخرسانة على طول الخشبة مطروح منه المسافة الفاضية
+                    eff_h = s_L - s_top_empty
+                    # حساب طول المستطيل الثابت بعد خصم مثلث الـ Hs
+                    h_const = max(0.0, eff_h - h_static)
                     s_loads_data = []
                     
                     if h_const > 0:
                         s_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": round(s_w_max, 2), "LA (m) or X (m)": 0.0, "LB (m)": round(h_const, 2)})
-                    if h_static > 0:
-                        s_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(wall_h, 2)})
+                    if h_static > 0 and eff_h > 0:
+                        s_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
                     if not s_loads_data:
                         s_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": s_L}]
@@ -459,17 +470,27 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
             with col_m2:
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
+                # ==============================================================================
                 # التعديل الذكي لـ Hydrostatic Load للكمرة الرئيسية
-                is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
+                # ==============================================================================
+                c_tog_m, c_inp_m = st.columns([1.5, 1])
+                with c_tog_m:
+                    is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
+                with c_inp_m:
+                    m_top_empty = 0.0
+                    if is_hydro_m:
+                        m_top_empty = st.number_input("Top Empty Dist (m)", value=0.0, step=0.05, key=f"m_top_empty_{i}")
+
                 if is_hydro_m: 
                     m_w_max = w_tot * m_spc
-                    h_const = max(0.0, wall_h - h_static)
+                    eff_h = m_L - m_top_empty
+                    h_const = max(0.0, eff_h - h_static)
                     m_loads_data = []
                     
                     if h_const > 0:
                         m_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": round(m_w_max, 2), "LA (m) or X (m)": 0.0, "LB (m)": round(h_const, 2)})
-                    if h_static > 0:
-                        m_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(wall_h, 2)})
+                    if h_static > 0 and eff_h > 0:
+                        m_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
                     if not m_loads_data:
                         m_loads_data = [{"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": 0.0, "LB (m)": m_L}]
