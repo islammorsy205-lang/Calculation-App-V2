@@ -277,7 +277,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
     
     st.markdown("### 🧱 Concrete Pressure Configuration")
     
-    col_w1, col_w2, col_w3 = st.columns(3)
+    col_w1, col_w2, col_w3, col_w4 = st.columns(4)
     with col_w1:
         st.link_button("🔗 Open Acrow Concrete Pressure Calculator", "https://acrow-sdt.github.io/pressure-calculator/")
         wall_pdf_curr = st.file_uploader("Upload Pressure PDF (Auto-extracts Value):", type=['pdf'], key=f"wall_pdf_{i}")
@@ -289,12 +289,18 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
         h_static = w_tot / 25.0
         st.success(f"✅ Auto-extracted: Pmax = {w_tot} kN/m², H static = {h_static:.2f} m")
         wall_pdf_curr.seek(0)
+        with col_w2: 
+            wall_h = st.number_input("Pouring Height (m)", value=float(st.session_state.get(f"hp_{i}", 3.50)), step=0.05, key=f"wall_ph_{i}")
     else:
         with col_w2: 
             w_tot = st.number_input("Concrete Pressure Pmax (kN/m²)", value=float(get_val("wall_p", i, 47.16)), step=0.05, key=f"wall_p_{i}")
         with col_w3: 
             h_static = st.number_input("H static (m)", value=float(get_val("wall_hs", i, w_tot/25.0)), step=0.05, key=f"wall_hs_{i}")
+        with col_w4: 
+            wall_h = st.number_input("Pouring Height (m)", value=float(st.session_state.get(f"hp_{i}", 3.50)), step=0.05, key=f"wall_ph_{i}")
             
+    st.session_state[f"hp_{i}"] = wall_h
+    
     m_spc_val = 1.0
     p_al_sys = 999.0
     panel_width = 0.0
@@ -362,11 +368,11 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
                 # ==============================================================================
-                # التعديل الذكي لـ Hydrostatic Load بناءً على طلبك (Linear ثم Trapezoidal ثم Zero)
+                # علامة ✅ للتأكيد على تحديث الكود الجديد + إجبار البرنامج على حمل صفر للمسافة الفاضية
                 # ==============================================================================
                 col_tog_s, col_inp_s = st.columns([1.2, 1])
                 with col_tog_s:
-                    is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
+                    is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal) ✅", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
                 
                 s_top_empty = 0.0
                 if is_hydro_s:
@@ -375,9 +381,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
 
                 if is_hydro_s: 
                     s_w_max = w_tot * s_spc
-                    # حساب الارتفاع الفعلي للخرسانة على طول الخشبة مطروح منه المسافة الفاضية من فوق
                     eff_h = s_L - s_top_empty
-                    # حساب طول المستطيل الثابت بعد خصم مثلث الـ Hs
                     h_const = max(0.0, eff_h - h_static)
                     s_loads_data = []
                     
@@ -387,7 +391,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     if h_static > 0 and eff_h > h_const:
                         s_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(s_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
-                    # 💡 الإصلاح الجذري للمومنت: إجبار البرنامج على وضع حمل صفر للمسافة الفاضية
+                    # 💡 إضافة الحمل الصفري لإغلاق معادلات الاتزان بدقة للمسافة الفارغة
                     if eff_h < s_L:
                         s_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(eff_h, 2), "LB (m)": round(s_L, 2)})
                         
@@ -471,11 +475,11 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
                 # ==============================================================================
-                # زرار الهيدروستاتيك للـ Main Beam مع مربع "المسافة الفاضية من أعلى الخشبة"
+                # علامة ✅ للتأكيد على تحديث الكود الجديد + إجبار البرنامج على حمل صفر للمسافة الفاضية
                 # ==============================================================================
                 col_tog_m, col_inp_m = st.columns([1.2, 1])
                 with col_tog_m:
-                    is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
+                    is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal) ✅", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
                 
                 m_top_empty = 0.0
                 if is_hydro_m:
@@ -494,7 +498,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                     if h_static > 0 and eff_h > h_const:
                         m_loads_data.append({"Load Type": "Trapezoidal", "WA (kN/m) or P (kN)": round(m_w_max, 2), "WB (kN/m)": 0.0, "LA (m) or X (m)": round(h_const, 2), "LB (m)": round(eff_h, 2)})
                         
-                    # 💡 الإصلاح الجذري للمومنت: إجبار البرنامج على وضع حمل صفر للمسافة الفاضية
+                    # 💡 إضافة الحمل الصفري لإغلاق معادلات الاتزان بدقة للمسافة الفارغة
                     if eff_h < m_L:
                         m_loads_data.append({"Load Type": "Linear", "WA (kN/m) or P (kN)": 0.0, "WB (kN/m)": 0.0, "LA (m) or X (m)": round(eff_h, 2), "LB (m)": round(m_L, 2)})
                         
