@@ -17,6 +17,7 @@ def parse_loads_from_df(df):
     for _, row in df.iterrows():
         l_type = str(row.get("Load Type", "Linear")).strip()
 
+        # دالة ذكية لمنع انهيار البرنامج عند وجود خلايا فارغة أو None
         def safe_float(val, default=0.0):
             if pd.isna(val) or val is None:
                 return float(default)
@@ -118,15 +119,15 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
             if i == len(crit_pts)-2: x_dense.extend(segment)
             else: x_dense.extend(segment[:-1])
     
-    x = np.array(x_dense)
-    num_nodes = len(x)
+    x_fem = np.array(x_dense)
+    num_nodes = len(x_fem)
     
     NDOF = num_nodes * 2
     K = np.zeros((NDOF, NDOF))
     F = np.zeros(NDOF)
     
     for i in range(num_nodes - 1):
-        L = x[i+1] - x[i]
+        L = x_fem[i+1] - x_fem[i]
         if L <= 0: continue
         k_el = (EI) / (L**3) * np.array([
             [12, 6*L, -12, 6*L],
@@ -141,13 +142,13 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
                 
     for ld in loads:
         if ld['type'] == 'point':
-            idx = np.argmin(np.abs(x - ld['x']))
+            idx = np.argmin(np.abs(x_fem - ld['x']))
             F[2*idx] -= ld['p']
         else:
             x1, x2 = ld['x1'], ld['x2']
             w1, w2 = ld['w1'], ld['w2']
             for i in range(num_nodes - 1):
-                xi, xj = x[i], x[i+1]
+                xi, xj = x_fem[i], x_fem[i+1]
                 L = xj - xi
                 if L <= 0: continue
                 ov_x1 = max(x1, xi)
@@ -169,7 +170,7 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
                         F[2*i] -= F_tot * (1 - dist_to_i/L)
                         F[2*i+2] -= F_tot * (dist_to_i/L)
                         
-    sup_idx = [np.argmin(np.abs(x - sx)) for sx in supports_x]
+    sup_idx = [np.argmin(np.abs(x_fem - sx)) for sx in supports_x]
     free_dof = list(range(NDOF))
     for sn in sup_idx:
         if 2*sn in free_dof:
@@ -188,20 +189,41 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
     
     R_full = K @ U - F
     R = [R_full[2*sn] for sn in sup_idx]
-    D = U[0::2] * 1000.0  
+    D_fem = U[0::2] * 1000.0  
     
-    V = np.zeros_like(x)
-    M = np.zeros_like(x)
+    # =========================================================================
+    # 💡 الإصلاح الجذري: زرع نقاط متناهية الصغر (1e-5) قبل وبعد الركائز 
+    # لاصطياد قمم قوى القص (Shear) الحقيقية بدقة متناهية بدون أي (Clipping)
+    # =========================================================================
+    x_eval_list = list(x_fem)
+    for sx in supports_x:
+        if sx > 1e-5: x_eval_list.append(sx - 1e-5)
+        if sx < L_total - 1e-5: x_eval_list.append(sx + 1e-5)
+        
+    for ld in loads:
+        if ld['type'] == 'point':
+            px = ld['x']
+            if px > 1e-5: x_eval_list.append(px - 1e-5)
+            if px < L_total - 1e-5: x_eval_list.append(px + 1e-5)
+            
+    x_eval = np.unique(np.sort(x_eval_list))
     
-    for i in range(num_nodes):
-        x_pt = x[i]
+    # Interpolation for Deflection (smooth curve)
+    D = np.interp(x_eval, x_fem, D_fem)
+    
+    V = np.zeros_like(x_eval)
+    M = np.zeros_like(x_eval)
+    
+    for i in range(len(x_eval)):
+        x_pt = x_eval[i]
         for j, sx in enumerate(supports_x):
-            if x_pt > sx + 1e-4:
+            # نستخدم (1e-7) لضمان تفاعل رياضي مثالي مع النقطة المزروعة
+            if x_pt > sx - 1e-7:
                 V[i] += R[j]
                 M[i] += R[j] * (x_pt - sx)
         for ld in loads:
             if ld['type'] == 'point':
-                if x_pt > ld['x'] + 1e-4:
+                if x_pt > ld['x'] - 1e-7:
                     V[i] -= ld['p']
                     M[i] -= ld['p'] * (x_pt - ld['x'])
             else:
@@ -214,7 +236,7 @@ def solve_beam_advanced(L_total, supports_x, loads, E_val, I_val):
                     V[i] -= (w1 + w_end) / 2.0 * L_ld
                     M[i] -= (w1 * L_ld * (x_pt - x1 - L_ld/2.0)) + (0.5 * (w_end - w1) * L_ld * (x_pt - x1 - 2.0 * L_ld / 3.0))
 
-    return x, V, M, D, R
+    return x_eval, V, M, D, R
 
 def get_element_safety_details(conf, is_sec=True):
     sec = conf['s_sec'] if is_sec else conf['m_sec']
