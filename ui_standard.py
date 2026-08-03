@@ -277,7 +277,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
     
     st.markdown("### 🧱 Concrete Pressure Configuration")
     
-    col_w1, col_w2, col_w3, col_w4 = st.columns(4)
+    col_w1, col_w2, col_w3 = st.columns(3)
     with col_w1:
         st.link_button("🔗 Open Acrow Concrete Pressure Calculator", "https://acrow-sdt.github.io/pressure-calculator/")
         wall_pdf_curr = st.file_uploader("Upload Pressure PDF (Auto-extracts Value):", type=['pdf'], key=f"wall_pdf_{i}")
@@ -289,18 +289,12 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
         h_static = w_tot / 25.0
         st.success(f"✅ Auto-extracted: Pmax = {w_tot} kN/m², H static = {h_static:.2f} m")
         wall_pdf_curr.seek(0)
-        with col_w2: 
-            wall_h = st.number_input("Pouring Height (m)", value=float(st.session_state.get(f"hp_{i}", 3.50)), step=0.05, key=f"wall_ph_{i}")
     else:
         with col_w2: 
             w_tot = st.number_input("Concrete Pressure Pmax (kN/m²)", value=float(get_val("wall_p", i, 47.16)), step=0.05, key=f"wall_p_{i}")
         with col_w3: 
             h_static = st.number_input("H static (m)", value=float(get_val("wall_hs", i, w_tot/25.0)), step=0.05, key=f"wall_hs_{i}")
-        with col_w4: 
-            wall_h = st.number_input("Pouring Height (m)", value=float(st.session_state.get(f"hp_{i}", 3.50)), step=0.05, key=f"wall_ph_{i}")
             
-    st.session_state[f"hp_{i}"] = wall_h
-    
     m_spc_val = 1.0
     p_al_sys = 999.0
     panel_width = 0.0
@@ -368,19 +362,20 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
                 # ==============================================================================
-                # التعديل الذكي لـ Hydrostatic Load بناءً على طلبك لمنحنى DIN 18218 (Linear ثم Trapezoidal)
+                # زرار الهيدروستاتيك مع مربع "المسافة الفاضية من أعلى الخشبة"
                 # ==============================================================================
-                c_tog_s, c_inp_s = st.columns([1.5, 1])
-                with c_tog_s:
-                    is_hydro_s = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
-                with c_inp_s:
-                    s_top_empty = 0.0
-                    if is_hydro_s:
-                        s_top_empty = st.number_input("Top Empty Dist (m)", value=0.0, step=0.05, key=f"s_top_empty_{i}")
+                col_tog_s, col_inp_s = st.columns([1.2, 1])
+                with col_tog_s:
+                    is_hydro_s = st.toggle("Apply Hydrostatic Load", value=bool(get_val("wshydro", i, False)), key=f"wshydro_{i}")
+                
+                s_top_empty = 0.0
+                if is_hydro_s:
+                    with col_inp_s:
+                        s_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(s_L), value=0.0, step=0.05, key=f"s_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة حتى بداية الخرسانة (المثلث)")
 
                 if is_hydro_s: 
                     s_w_max = w_tot * s_spc
-                    # حساب الارتفاع الفعلي للخرسانة على طول الخشبة مطروح منه المسافة الفاضية
+                    # حساب الارتفاع الفعلي للخرسانة على طول الخشبة مطروح منه المسافة الفاضية من فوق
                     eff_h = s_L - s_top_empty
                     # حساب طول المستطيل الثابت بعد خصم مثلث الـ Hs
                     h_const = max(0.0, eff_h - h_static)
@@ -471,15 +466,16 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
                 st.markdown("**Load Assignment & Interactive Sketch**")
                 
                 # ==============================================================================
-                # التعديل الذكي لـ Hydrostatic Load للكمرة الرئيسية
+                # زرار الهيدروستاتيك للـ Main Beam مع مربع "المسافة الفاضية من أعلى الخشبة"
                 # ==============================================================================
-                c_tog_m, c_inp_m = st.columns([1.5, 1])
-                with c_tog_m:
-                    is_hydro_m = st.toggle("Apply Hydrostatic Load (Trapezoidal)", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
-                with c_inp_m:
-                    m_top_empty = 0.0
-                    if is_hydro_m:
-                        m_top_empty = st.number_input("Top Empty Dist (m)", value=0.0, step=0.05, key=f"m_top_empty_{i}")
+                col_tog_m, col_inp_m = st.columns([1.2, 1])
+                with col_tog_m:
+                    is_hydro_m = st.toggle("Apply Hydrostatic Load", value=bool(get_val("wmhydro", i, False)), key=f"wmhydro_{i}")
+                
+                m_top_empty = 0.0
+                if is_hydro_m:
+                    with col_inp_m:
+                        m_top_empty = st.number_input("Top Empty Dist. (m)", min_value=0.0, max_value=float(m_L), value=0.0, step=0.05, key=f"m_top_empty_{i}", help="المسافة الفاضية من أعلى الخشبة حتى بداية الخرسانة (المثلث)")
 
                 if is_hydro_m: 
                     m_w_max = w_tot * m_spc
@@ -552,7 +548,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
     if not is_panel_sys:
         section_data.update({
             "cat": "vertical", "sub_cat": element_subtype, "sys_name": vert_system, "is_panel_system": False, 
-            "height": wall_h, 
+            "height": st.session_state.get(f"hp_{i}", h_static+0.5) if not is_single_sided else h_static, 
             "w": w_tot, "ply_thick": p_th, "ply_mall": p_mal, "s_sec": s_sec, "s_spc": s_spc, "s_L": s_L, 
             "s_cl": s_cl, "s_sp": s_spns, "s_cr": s_cr, "s_ld": s_loads_parsed, "s_sup": s_supports, 
             "s_ld_img": s_sketch_bytes, "m_sec": m_sec, "m_spc": m_spc, "m_L": m_L, "m_cl": m_cl, 
@@ -563,7 +559,7 @@ def render_vertical_element(i, element_subtype, def_sec, def_main):
         section_data.update({
             "cat": "vertical", "sub_cat": element_subtype, "sys_name": vert_system, "is_panel_system": True, 
             "w": w_tot, "panel_w": panel_width, "panel_allowable": p_al_sys, "wall_pdf_curr": wall_pdf_curr, 
-            "height": wall_h
+            "height": st.session_state.get(f"hp_{i}", h_static+0.5) if not is_single_sided else h_static
         })
         
     return section_data
