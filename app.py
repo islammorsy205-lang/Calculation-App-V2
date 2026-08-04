@@ -97,7 +97,18 @@ def_live_load = 1.50 if "BS" in ref_code else 2.40
 st.divider()
 st.subheader("2. Structural System Configurator")
 
-sys_cat = st.radio("Select Structural Category:", ["Slab Elements", "Vertical Elements (Walls, Columns)"], horizontal=True)
+sys_cat = st.radio("Select Structural Category:", ["Slab Elements", "Vertical Elements (Walls, Columns)", "Inclined Elements (Frames)", "Slab Back-propping"], horizontal=True)
+
+if "Inclined Elements" in sys_cat:
+    import inclined_master
+    inclined_master.render_inclined_module()
+    st.stop()
+
+if "Back-propping" in sys_cat:
+    import backprop_master
+    backprop_master.render_backprop_module(ref_code)
+    st.stop()
+
 configs = []
 
 if "Slab Elements" in sys_cat:
@@ -762,9 +773,6 @@ if generate_doc_btn:
                         add_word_check(doc, "Max Shear per Bolt (Worst Base)", max_rx_base/2, 29.50, "KN")
                         add_word_check(doc, "Max Tension per Bolt (Worst Base)", max_ry_base/2, 15.10, "KN")
                         
-                        # =========================================================================
-                        # 💡 التعديل المطلوب: زراعة النص الأحمر الخاص بالمسامير بخط Arial 12 وفي المنتصف
-                        # =========================================================================
                         p_red = doc.add_paragraph()
                         p_red.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         p_red.paragraph_format.line_spacing = 1.5
@@ -773,9 +781,6 @@ if generate_doc_btn:
                         run_red.font.size = Pt(12)
                         run_red.font.color.rgb = RGBColor(255, 0, 0)
 
-            # =========================================================================
-            # 💡 التعديل المطلوب: وضع ملف Hilti_Bolt.pdf في آخر النوتة للأعمدة والحوائط المزدوجة فقط
-            # =========================================================================
             has_double_sided_or_column = any((c.get('cat') == 'vertical' and not c.get('strongback', {}).get('active')) for c in configs)
             
             if "Vertical" in sys_cat and has_double_sided_or_column and os.path.exists("Hilti_Bolt.pdf"):
