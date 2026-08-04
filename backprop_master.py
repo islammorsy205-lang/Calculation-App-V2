@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+# 💡 المكتبات دي ضرورية جداً للتحكم في اتجاه الوورد (إلغاء العربي وإجبار اليسار)
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 try:
     from math_solver import get_prop_allowable, get_scaffold_allowable
@@ -86,34 +89,47 @@ def generate_backprop_report(configs, ref_code):
         doc.add_page_break()
     else:
         doc = Document()
+
+    # 💡 الدالة المسؤولة عن التدخل في XML الوورد لكسر خصائص العربي وإجبار النص لليسار تماماً
+    def force_ltr_left(p):
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        pPr = p._element.get_or_add_pPr()
+        bidi = OxmlElement('w:bidi')
+        bidi.set(qn('w:val'), '0')
+        pPr.append(bidi)
         
     def add_p(text, bold=False, underline=False, color=None, size=12, indent=0):
         p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT  # 💡 الإجبار التام على المحاذاة لليسار
+        force_ltr_left(p)  # إجبار الاتجاه هنا
+        
         p.paragraph_format.line_spacing = 1.5
         if indent > 0:
             p.paragraph_format.left_indent = Cm(indent)
+            
         r = p.add_run(text)
         r.font.name = 'Arial'
         r.font.size = Pt(size)
         r.font.bold = bold
         r.font.underline = underline
+        r.font.rtl = False  # إجبار الحروف على عدم اتباع النظام العربي
         if color:
             r.font.color.rgb = color
         return p
 
     p_title = doc.add_paragraph()
-    p_title.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام
+    force_ltr_left(p_title)
     run_title = p_title.add_run("CALCULATION SHEET FOR RE-PROPPING (BACK-PROPPING)")
     run_title.font.name = 'Arial'
     run_title.font.size = Pt(16)
     run_title.font.bold = True
+    run_title.font.rtl = False
     
     p_code = doc.add_paragraph()
-    p_code.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام
+    force_ltr_left(p_code)
     r_code = p_code.add_run("="*50 + f"\nCode Reference: {ref_code}")
     r_code.font.name = 'Arial'
     r_code.font.bold = True
+    r_code.font.rtl = False
 
     for z_idx, conf in enumerate(configs):
         if z_idx > 0: doc.add_page_break()
@@ -128,7 +144,6 @@ def generate_backprop_report(configs, ref_code):
         add_p("B. Live load:", indent=1)
         add_p(f"-  Live load = {conf['LL']:.2f} KN/m²", indent=2)
         
-        # 💡 تم التعديل كما ورد بخط اليد باللون الأحمر تماماً
         add_p("\nLoad Acting on Existing Lower Slabs while Casting of Fresh Concrete Slabs.", bold=True, underline=True)
         add_p(f"-  Slabs: {conf['ts_fresh'] * 1000:.0f} mm.", indent=1)
         
@@ -137,8 +152,6 @@ def generate_backprop_report(configs, ref_code):
         calc_str = f"               = {conf['gamma_c']:.1f}X{conf['ts_fresh']:.2f} + {conf['LL']:.2f} + {conf['FW']:.2f} = {conf['W_fresh']:.2f} KN/m²"
         add_p(calc_str, bold=True, indent=1)
 
-        # 💡 تم إلغاء الشيك الذي يسبق إدخال البلاطة بناءً على علامة (X) الحمراء
-        
         # ---------------- Iterate Existing Slabs ----------------
         current_transferred = conf['W_fresh']
         
@@ -168,22 +181,26 @@ def generate_backprop_report(configs, ref_code):
                 load_leg_i = grid_i['area'] * next_transferred
                 
                 check_txt_i = f"Area Load on one leg of {grid_i['sys']} = {grid_i['area']:.2f} x {next_transferred:.2f} = {load_leg_i:.2f} KN < {grid_i['cap']:.2f} KN"
+                
                 p_check_i = doc.add_paragraph()
-                p_check_i.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام لليسار
+                force_ltr_left(p_check_i) # إجبار الاتجاه
                 p_check_i.paragraph_format.line_spacing = 1.5
                 p_check_i.paragraph_format.left_indent = Cm(1)
+                
                 r_ci = p_check_i.add_run(check_txt_i)
                 r_ci.font.name = 'Arial'
                 r_ci.font.size = Pt(12)
+                r_ci.font.rtl = False
+                
                 r_resi = p_check_i.add_run("   SAFE" if load_leg_i <= grid_i['cap'] else "   UNSAFE")
                 r_resi.font.name = 'Arial'
                 r_resi.font.size = Pt(12)
                 r_resi.font.bold = True
+                r_resi.font.rtl = False
                 r_resi.font.color.rgb = RGBColor(0, 128, 0) if load_leg_i <= grid_i['cap'] else RGBColor(255, 0, 0)
                 
             current_transferred = next_transferred
 
-        # 💡 ---------------- خلاصة عدد الأدوار ----------------
         levels_propped = conf['levels_propped']
         add_p("\n=======================================================", bold=True)
         add_p(f"FINAL CONCLUSION FOR ZONE {z_idx+1}:", bold=True, color=RGBColor(0, 128, 0))
@@ -197,7 +214,7 @@ def generate_backprop_report(configs, ref_code):
 
         add_p("Load Path Diagram:", bold=True)
         p_img = doc.add_paragraph()
-        p_img.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام لليسار
+        force_ltr_left(p_img) # إجبار الاتجاه لليسار لضمان أن الصورة لن تذهب لليمين
         p_img.add_run().add_picture(io.BytesIO(conf['img_buf'].read()), width=Cm(12.0))
             
     out = io.BytesIO()
@@ -206,7 +223,7 @@ def generate_backprop_report(configs, ref_code):
 
 def render_backprop_module(ref_code):
     st.markdown("## 🏗️ Multi-Zone Slab Re-propping (Back-propping)")
-    st.info("💡 **Independent Module:** Evaluate multiple independent zones. Detailed outputs are strictly aligned to the left with 1.5 line spacing.")
+    st.info("💡 **Independent Module:** Evaluate multiple independent zones of fresh slabs. Each floor can have a distinct shoring grid and system.")
     
     LL_const = 1.50 if "BS" in ref_code else 2.40
     FW_load = 0.50
@@ -238,7 +255,7 @@ def render_backprop_module(ref_code):
                 sidl_des = ec2.number_input("Design SIDL (kN/m²)", value=0.50, step=0.5, key=f'sidl_{idx}_{j}')
                 strength = ec3.number_input("Strength Achieved (%)", value=80.0, step=5.0, key=f'str_{idx}_{j}')
                 
-                st.markdown(f"**Level {j+2} Shoring (Props Under Existing Slab {j+1})**")
+                st.markdown(f"**Level {j+1} Back-propping Shoring (Props Under Existing Slab {j+1})**")
                 ssc1, ssc2, ssc3 = st.columns(3)
                 sys_j = ssc1.selectbox("Shoring Type", sys_opts, key=f'sj_{idx}_{j}')
                 gx_j = ssc2.number_input("Grid X (m)", value=1.2, step=0.1, key=f'gxj_{idx}_{j}')
@@ -273,10 +290,9 @@ def render_backprop_module(ref_code):
     st.markdown("---")
     if st.button("🚀 Calculate & Generate Detailed Left-Aligned Report", type="primary", use_container_width=True):
         
-        # 💡 حلقة ذكية لحساب عدد الأدوار المطلوبة للصلب قبل الطباعة
         for idx, conf in enumerate(configs):
             current_transferred = conf['W_fresh']
-            levels_propped = 1 # أساسي: يجب صلب الدور الذي تحت البلاطة الفريش
+            levels_propped = 1 
             
             for slab in conf['existing_slabs']:
                 if current_transferred <= 0: break
@@ -289,7 +305,6 @@ def render_backprop_module(ref_code):
             conf['levels_propped'] = levels_propped
             conf['img_buf'] = plot_zone_system(conf)
             
-            # إظهار رسالة واضحة جداً للمستخدم في الشاشة
             st.success(f"✅ **Zone {idx+1} Summary:** You need to prop **{levels_propped} Floors** in total. (1 Floor Main Shoring + {levels_propped-1} Floors Back-propping).")
             st.image(conf['img_buf'], use_container_width=False)
             
