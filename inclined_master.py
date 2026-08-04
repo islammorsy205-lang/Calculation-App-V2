@@ -38,7 +38,7 @@ except ImportError:
 def get_shoring_capacity(t_nm, subtype, unb, req_ext):
     try:
         if t_nm == "Shorebrace Frame": return 54.00
-        elif t_nm == "Cuplock": return get_scaffold_allowable("Cup-lock", subtype, unb)
+        elif t_nm == "Cup-lock": return get_scaffold_allowable("Cup-lock", subtype, unb)
         elif t_nm == "Ringlock": return get_scaffold_allowable("Ringlock", subtype, unb)
         elif t_nm == "Acrow Prop": return get_prop_allowable(subtype, req_ext, True)
     except:
@@ -939,13 +939,11 @@ def render_inclined_module():
     st.markdown("#### ⚓ 2. Ground Supports Configuration")
     st.info("The corner support is at X=0. You can define additional ground supports anywhere on the base.")
     
-    # 💡 القائمة الذكية المحدثة للركيزة الركنية
     c_c1, c_c2 = st.columns(2)
     corner_check_opt = c_c1.selectbox("Corner Support Securing Method", ["2 Tie Rods", "Shoring System", "None (On Ground directly)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
     
     corner_tr_cap = 180.0
     if corner_check_opt == "2 Tie Rods":
-        # حمل الـ Tie Rod الثابت هو 90kN (إجمالي 2 Tie Rods = 180 kN)
         corner_tr_cap = 180.0
         c_c2.markdown("<span style='font-size:13px; color:gray; padding-top:8px; display:block;'><b>2 Tie-Rods SWL:</b> 180.0 kN (90 kN each)</span>", unsafe_allow_html=True)
 
@@ -1143,7 +1141,7 @@ def render_inclined_module():
         html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", max_def_base, sd['X_tot'] * 1000 / 200, "mm")
         
         for i, st_res in enumerate(struts_results):
-            st_data = STRUTS_DB.get(st_val['type'] if 'type' in st_val else st_res['type'], {})
+            st_data = STRUTS_DB.get(st_res['type'], {})
             allow = st_data.get('allow', st_data.get('pts', {0: 50.0}).get(list(st_data.get('pts', {0:50.0}).keys())[0], 50.0))
             html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], allow, "kN")
             
