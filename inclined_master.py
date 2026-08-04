@@ -615,15 +615,36 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
     draw_base_geometry(ax_react, nodes, elements, supports_list)
     draw_section_names(ax_react, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, base_sec)
     
-    for i, n in enumerate(nodes):
-        Rx, Ry = R_reactions[3*i], R_reactions[3*i+1]
-        x, y = n[0], n[1]
-        if abs(Rx) > 0.1:
-            ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*np.sign(Rx), y), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
-            ax_react.text(x - 0.8*np.sign(Rx), y - 0.2, f"{abs(Rx):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='top')
-        if abs(Ry) > 0.1:
-            ax_react.annotate("", xy=(x, y), xytext=(x, y - 0.7*np.sign(Ry)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
-            ax_react.text(x, y - 0.8*np.sign(Ry), f"{abs(Ry):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='top')
+    for sup in supports_list:
+        n = sup['node']
+        t = sup['type']
+        a = sup['angle']
+        
+        Rx, Ry = R_reactions[3*n], R_reactions[3*n+1]
+        
+        rad = np.radians(a)
+        c_a, s_a = np.cos(rad), np.sin(rad)
+        
+        R_u = Rx * c_a + Ry * s_a
+        R_v = -Rx * s_a + Ry * c_a
+        
+        x, y = nodes[n][0], nodes[n][1]
+        
+        if t == 'Roller':
+            if abs(R_v) > 0.1:
+                norm_x, norm_y = -s_a, c_a
+                ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*norm_x*np.sign(R_v), y - 0.7*norm_y*np.sign(R_v)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
+                ax_react.text(x - 0.9*norm_x*np.sign(R_v), y - 0.9*norm_y*np.sign(R_v), f"{abs(R_v):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+        else:
+            if abs(R_u) > 0.1:
+                dir_x, dir_y = c_a, s_a
+                ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*dir_x*np.sign(R_u), y - 0.7*dir_y*np.sign(R_u)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
+                ax_react.text(x - 0.9*dir_x*np.sign(R_u), y - 0.9*dir_y*np.sign(R_u), f"{abs(R_u):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+            if abs(R_v) > 0.1:
+                norm_x, norm_y = -s_a, c_a
+                ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*norm_x*np.sign(R_v), y - 0.7*norm_y*np.sign(R_v)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
+                ax_react.text(x - 0.9*norm_x*np.sign(R_v), y - 0.9*norm_y*np.sign(R_v), f"{abs(R_v):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+                
     figs_dict['React'] = get_img_buf(fig_react)
 
     # --- Force Diagrams Helper ---
@@ -846,6 +867,10 @@ def render_inclined_module():
     if 'inclined_solved' not in st.session_state:
         st.session_state.inclined_solved = False
         
+    c_tot1, c_tot2 = st.columns(2)
+    L_tot_val = c_tot1.number_input("Total Inclined Soldier Length (m)", value=5.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    X_tot_val = c_tot2.number_input("Total Base Soldier Length (m)", value=3.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+        
     c_top1, c_top2 = st.columns(2)
     angle_deg = c_top1.number_input("Inclination Angle (Degrees, < 90)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
     angle_rad = np.radians(angle_deg)
@@ -879,16 +904,15 @@ def render_inclined_module():
         st_type = cl3.selectbox(f"Strut {j+1} (Req: {req_len:.2f}m)", valid_struts, key=f"st_{j}", on_change=lambda: st.session_state.update(inclined_solved=False))
         strut_types.append(st_type)
         
-    cr1, cr2 = st.columns(2)
-    L_rem = cr1.number_input("Remaining Inclined Top L (m)", value=1.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
-    X_rem = cr2.number_input("Remaining Base Right X (m)", value=0.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    L_rem = max(0.0, L_tot_val - sum(L_segs))
+    X_rem = max(0.0, X_tot_val - sum(X_segs))
     
     st.markdown("#### ⚓ 2. Ground Supports Configuration")
     st.info("The corner support is at X=0. You can define additional ground supports anywhere on the base.")
     
     c_sup1, c_sup2 = st.columns(2)
     corner_type = c_sup1.selectbox("Corner Support (Bottom-Left)", ["Hinged", "Roller", "Fixed"], key="corn_type", on_change=lambda: st.session_state.update(inclined_solved=False))
-    corner_ang = c_sup2.number_input("Corner Roller Angle (0=Horiz)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False)) if corner_type == "Roller" else 0.0
+    corner_ang = c_sup2.number_input("Corner Support Angle (0=Horiz)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False))
     corner_sup = {'type': corner_type, 'angle': corner_ang}
     
     num_base_sups = st.number_input("Number of Additional Ground Supports", 0, 10, int(num_struts), on_change=lambda: st.session_state.update(inclined_solved=False))
@@ -896,12 +920,11 @@ def render_inclined_module():
     
     default_xs = [sum(X_segs[:i+1]) for i in range(len(X_segs))]
     for i in range(int(num_base_sups)):
-        cs1, cs2, cs3 = st.columns(3)
+        cs1, cs2 = st.columns(2)
         def_x = default_xs[i] if i < len(default_xs) else float((i+1)*1.5)
         sx = cs1.number_input(f"Support {i+1} X (m)", value=def_x, step=0.5, key=f"sx_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
         stype = cs2.selectbox(f"Type {i+1}", ["Hinged", "Roller", "Fixed"], key=f"stype_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-        sang = cs3.number_input(f"Angle {i+1}", value=0.0, step=15.0, key=f"sang_{i}", on_change=lambda: st.session_state.update(inclined_solved=False)) if stype == "Roller" else 0.0
-        base_sups.append({'x': sx, 'type': stype, 'angle': sang})
+        base_sups.append({'x': sx, 'type': stype, 'angle': 0.0})
 
     c_in, c_plot = st.columns([1.3, 1])
     
@@ -935,13 +958,13 @@ def render_inclined_module():
                         if l_type == "Uniform":
                             cl1, cl2, cw1 = st.columns(3)
                             start_l = cl1.number_input(f"Start {item+1} (m)", value=0.0, step=0.5, key=f"ls_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            len_l = cl2.number_input(f"Length {item+1} (m)", value=sum(L_segs)+L_rem, step=0.5, key=f"ll_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                            len_l = cl2.number_input(f"Length {item+1} (m)", value=L_tot_val, step=0.5, key=f"ll_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                             w1 = cw1.number_input(f"W {item+1} (kN/m)", value=15.0, step=1.0, key=f"w1_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                             applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w1, 'dir': ldir})
                         else:
                             cl1, cl2, cw1, cw2 = st.columns(4)
                             start_l = cl1.number_input(f"Start {item+1} (m)", value=0.0, step=0.5, key=f"ls_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            len_l = cl2.number_input(f"Length {item+1} (m)", value=sum(L_segs)+L_rem, step=0.5, key=f"ll_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                            len_l = cl2.number_input(f"Length {item+1} (m)", value=L_tot_val, step=0.5, key=f"ll_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                             w1 = cw1.number_input(f"W1 {item+1} (kN/m)", value=15.0, step=1.0, key=f"w1_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                             w2 = cw2.number_input(f"W2 {item+1} (kN/m)", value=0.0, step=1.0, key=f"w2_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                             applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w2, 'dir': ldir})
