@@ -8,6 +8,7 @@ import os
 import re
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -20,7 +21,7 @@ except ImportError:
     STRUTS_DB = {}
 
 # =========================================================
-# 0. Helper Functions
+# 0. Helper Functions & Styles
 # =========================================================
 def get_valid_struts(req_len, struts_db):
     valid = []
@@ -76,6 +77,7 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
             inc_key_pts.append(ld['end'])
             
     inc_key_pts = sorted(list(set([round(p, 4) for p in inc_key_pts if 0 <= p <= L_tot + 1e-5])))
+    major_L = set([round(p, 4) for p in inc_key_pts])
     
     inc_nodes_L = []
     for i in range(len(inc_key_pts)-1):
@@ -89,24 +91,34 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
     
     nodes = []
     inc_node_indices = []
+    major_nodes = set()
     
     nodes.append([0.0, 0.0, False, True, False])
     inc_node_indices.append(0)
+    major_nodes.add(0)
     
     for L_val in inc_nodes_L[1:]:
         nodes.append([L_val * np.cos(angle_rad), L_val * np.sin(angle_rad), False, False, False])
-        inc_node_indices.append(len(nodes)-1)
-        
+        idx = len(nodes)-1
+        inc_node_indices.append(idx)
+        if round(L_val, 4) in major_L:
+            major_nodes.add(idx)
+            
     base_node_indices = [0]
     X_cum = 0.0
     for X_seg in X_segs:
         X_cum += X_seg
         nodes.append([X_cum, 0.0, True, True, False])
-        base_node_indices.append(len(nodes)-1)
+        idx = len(nodes)-1
+        base_node_indices.append(idx)
+        major_nodes.add(idx)
+        
     if X_rem > 0:
         X_cum += X_rem
         nodes.append([X_cum, 0.0, False, False, False])
-        base_node_indices.append(len(nodes)-1)
+        idx = len(nodes)-1
+        base_node_indices.append(idx)
+        major_nodes.add(idx)
         
     elements = []
     nodal_loads = []
@@ -177,7 +189,7 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
                 'E': E_st, 'A': st_props.get('A', 0.001)
             })
             
-    return nodes, elements, nodal_loads, L_tot, sum(X_segs)+X_rem
+    return nodes, elements, nodal_loads, L_tot, sum(X_segs)+X_rem, major_nodes
 
 # =========================================================
 # 2. Advanced 2D Frame FEA Solver
@@ -320,7 +332,6 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     apply_plot_styles()
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.set_aspect('equal', adjustable='datalim')
-    ax.grid(True, linestyle=':', alpha=0.3)
     ax.axis('off')
 
     for i, n in enumerate(nodes):
@@ -342,53 +353,69 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     for i, seg in enumerate(L_segs):
         px = (curr_l + seg/2) * c_ang
         py = (curr_l + seg/2) * s_ang
-        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center')
+        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center', fontname='Arial')
         curr_l += seg
         
     curr_x = 0.0
     for i, seg in enumerate(X_segs):
         px = curr_x + seg/2
         py = 0.0
-        ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center')
+        ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center', fontname='Arial')
         curr_x += seg
 
-    for ld in applied_loads:
-        w1, w2 = ld['w1'], ld['w2']
-        start_L, end_L = ld['start'], ld['end']
-        dir_type = ld['dir']
+    if applied_loads:
+        max_w = max([max(abs(ld['w1']), abs(ld['w2'])) for ld in applied_loads] + [1.0])
+        scale_ld = 1.2 / max_w
         
-        if ld['type'] == 'Point Load':
-            px = start_L * c_ang
-            py = start_L * s_ang
-            arrow_len = 1.0
-            if dir_type == 'Gravity (Vertical ↓)':
-                ax.arrow(px, py + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                ax.text(px, py + arrow_len + 0.4, f"{w1} kN", color='fuchsia', fontsize=8, ha='center')
-            else:
-                ax.arrow(px - s_ang*(arrow_len+0.1), py + c_ang*(arrow_len+0.1), s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                ax.text(px - s_ang*(arrow_len+0.4), py + c_ang*(arrow_len+0.4), f"{w1} kN", color='fuchsia', fontsize=8, ha='center', rotation=angle_deg)
-        else:
-            num_arrows = max(3, int((end_L - start_L) / 0.5))
-            xs = np.linspace(start_L, end_L, num_arrows)
-            for x_dist in xs:
-                w_curr = w1 + (w2 - w1) * (x_dist - start_L) / max(end_L - start_L, 1e-5)
-                if abs(w_curr) < 0.1: continue
-                px = x_dist * c_ang
-                py = x_dist * s_ang
-                arrow_len = 0.8 * (abs(w_curr) / max(abs(w1), abs(w2), 1))
+        for ld in applied_loads:
+            w1, w2 = ld['w1'], ld['w2']
+            start_L, end_L = ld['start'], ld['end']
+            dir_type = ld['dir']
+            
+            px1, py1 = start_L * c_ang, start_L * s_ang
+            px2, py2 = end_L * c_ang, end_L * s_ang
+            
+            if ld['type'] == 'Point Load':
+                arrow_len = 1.0
                 if dir_type == 'Gravity (Vertical ↓)':
-                    ax.arrow(px, py + arrow_len + 0.1, 0, -arrow_len, head_width=0.1, head_length=0.15, fc='magenta', ec='magenta', zorder=4, linewidth=0.5)
+                    ax.arrow(px1, py1 + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
+                    ax.text(px1, py1 + arrow_len + 0.4, f"{w1} kN", color='fuchsia', fontsize=8, ha='center', fontname='Arial')
                 else:
-                    ax.arrow(px - s_ang*(arrow_len+0.1), py + c_ang*(arrow_len+0.1), s_ang*arrow_len, -c_ang*arrow_len, head_width=0.1, head_length=0.15, fc='magenta', ec='magenta', zorder=4, linewidth=0.5)
-                    
-            mid_L = (start_L + end_L) / 2.0
-            mid_x = mid_L * c_ang
-            mid_y = mid_L * s_ang
-            txt = f"{w1}" if ld['type'] == 'Uniform' else f"{w1} to {w2}"
-            if dir_type == 'Gravity (Vertical ↓)':
-                ax.text(mid_x, mid_y + 1.2, f"{txt} kN/m\n({dir_type.split()[0]})", color='magenta', fontsize=7, ha='center')
+                    start_x = px1 - s_ang*(arrow_len+0.1)
+                    start_y = py1 + c_ang*(arrow_len+0.1)
+                    ax.arrow(start_x, start_y, s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
+                    ax.text(start_x - s_ang*0.3, start_y + c_ang*0.3, f"{w1} kN", color='fuchsia', fontsize=8, ha='center', rotation=angle_deg, fontname='Arial')
             else:
-                ax.text(mid_x - s_ang*1.2, mid_y + c_ang*1.2, f"{txt} kN/m", color='magenta', fontsize=7, ha='center', rotation=angle_deg)
+                if dir_type == 'Gravity (Vertical ↓)':
+                    hx1, hy1 = px1, py1 + w1 * scale_ld
+                    hx2, hy2 = px2, py2 + w2 * scale_ld
+                else:
+                    hx1, hy1 = px1 - s_ang * w1 * scale_ld, py1 + c_ang * w1 * scale_ld
+                    hx2, hy2 = px2 - s_ang * w2 * scale_ld, py2 + c_ang * w2 * scale_ld
+                    
+                poly = Polygon([(px1,py1), (hx1,hy1), (hx2,hy2), (px2,py2)], facecolor='none', edgecolor='magenta', linewidth=0.8, zorder=3)
+                ax.add_patch(poly)
+                
+                num_arrows = max(3, int((end_L - start_L) / 0.4))
+                xs = np.linspace(start_L, end_L, num_arrows)
+                for x_dist in xs:
+                    w_curr = w1 + (w2 - w1) * (x_dist - start_L) / max(end_L - start_L, 1e-5)
+                    px = x_dist * c_ang
+                    py = x_dist * s_ang
+                    hl = w_curr * scale_ld
+                    if dir_type == 'Gravity (Vertical ↓)':
+                        ax.arrow(px, py + hl, 0, -hl*0.9, head_width=0.08, head_length=0.1, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                    else:
+                        ax.arrow(px - s_ang*hl, py + c_ang*hl, s_ang*hl*0.9, -c_ang*hl*0.9, head_width=0.08, head_length=0.1, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                        
+                mid_L = (start_L + end_L) / 2.0
+                mid_x = mid_L * c_ang
+                mid_y = mid_L * s_ang
+                txt = f"{w1}" if ld['type'] == 'Uniform' else f"{w1} to {w2}"
+                if dir_type == 'Gravity (Vertical ↓)':
+                    ax.text(mid_x, mid_y + max(w1, w2)*scale_ld + 0.3, f"{txt} kN/m\n({dir_type.split()[0]})", color='magenta', fontsize=7, ha='center', fontname='Arial')
+                else:
+                    ax.text(mid_x - s_ang*(max(w1,w2)*scale_ld + 0.3), mid_y + c_ang*(max(w1,w2)*scale_ld + 0.3), f"{txt} kN/m", color='magenta', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
 
     plt.tight_layout()
     img_buf = io.BytesIO()
@@ -397,18 +424,17 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     img_buf.seek(0)
     return img_buf
 
-def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_sec):
+def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_sec, major_nodes, applied_loads, angle_deg):
     apply_plot_styles()
     fig = plt.figure(figsize=(18, 12))
     
-    # 💡 توزيع جديد للوحات يشمل الـ Reactions
-    ax_geom = plt.subplot(2, 3, 1)
+    ax_load = plt.subplot(2, 3, 1)
     ax_react = plt.subplot(2, 3, 2)
     ax_n = plt.subplot(2, 3, 3)
     ax_v = plt.subplot(2, 3, 4)
     ax_m = plt.subplot(2, 3, 5)
     
-    axes = [ax_geom, ax_react, ax_n, ax_v, ax_m]
+    axes = [ax_load, ax_react, ax_n, ax_v, ax_m]
     for ax in axes:
         ax.set_aspect('equal', adjustable='datalim')
         ax.axis('off')
@@ -416,7 +442,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_se
     def draw_bottom_title(ax, title):
         ax.text(0.5, -0.05, title, transform=ax.transAxes, ha='center', va='top', fontname='Arial', fontsize=11, fontweight='normal')
         w = len(title) * 0.012
-        ax.plot([0.5 - w, 0.5 + w], [-0.10, -0.10], transform=ax.transAxes, color='black', lw=0.6, clip_on=False)
+        ax.plot([0.5 - w, 0.5 + w], [-0.08, -0.08], transform=ax.transAxes, color='black', lw=0.6, clip_on=False)
 
     def draw_base(ax):
         for i, n in enumerate(nodes):
@@ -431,22 +457,53 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_se
 
     for ax in axes: draw_base(ax)
     
-    draw_bottom_title(ax_geom, "System Geometry")
+    draw_bottom_title(ax_load, "Assigned Load Diagram")
     draw_bottom_title(ax_react, "Reactions Diagram (kN)")
     draw_bottom_title(ax_n, "Axial Force Diagram (kN)")
     draw_bottom_title(ax_v, "Shear Force Diagram (kN)")
     draw_bottom_title(ax_m, "Bending Moment Diagram (kN.m)")
     
-    # --- Geometry Names ---
-    for el in elements:
-        n1, n2 = nodes[el['n1']], nodes[el['n2']]
-        mid_x, mid_y = (n1[0]+n2[0])/2, (n1[1]+n2[1])/2
-        if el['group'] == 'inclined':
-            ax_geom.text(mid_x - 0.4, mid_y + 0.4, el['sec'], color='dimgray', fontsize=8, rotation=np.degrees(np.arctan2(el['s'], el['c'])), ha='center')
-        elif el['group'] == 'base':
-            ax_geom.text(mid_x, mid_y - 0.4, el['sec'], color='dimgray', fontsize=8, ha='center')
-        elif el['group'] == 'strut':
-            ax_geom.text(mid_x, mid_y + 0.2, el['sec'], color='dimgray', fontsize=7, rotation=np.degrees(np.arctan2(n2[1]-n1[1], n2[0]-n1[0])), ha='center')
+    # --- Assigned Load Diagram (ax_load) ---
+    angle_rad = np.radians(angle_deg)
+    c_ang, s_ang = np.cos(angle_rad), np.sin(angle_rad)
+    if applied_loads:
+        max_w = max([max(abs(ld['w1']), abs(ld['w2'])) for ld in applied_loads] + [1.0])
+        scale_ld = 1.2 / max_w
+        for ld in applied_loads:
+            w1, w2 = ld['w1'], ld['w2']
+            start_L, end_L = ld['start'], ld['end']
+            dir_type = ld['dir']
+            px1, py1 = start_L * c_ang, start_L * s_ang
+            px2, py2 = end_L * c_ang, end_L * s_ang
+            
+            if ld['type'] == 'Point Load':
+                arrow_len = 1.0
+                if dir_type == 'Gravity (Vertical ↓)':
+                    ax_load.arrow(px1, py1 + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
+                else:
+                    start_x = px1 - s_ang*(arrow_len+0.1)
+                    start_y = py1 + c_ang*(arrow_len+0.1)
+                    ax_load.arrow(start_x, start_y, s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
+            else:
+                if dir_type == 'Gravity (Vertical ↓)':
+                    hx1, hy1 = px1, py1 + w1 * scale_ld
+                    hx2, hy2 = px2, py2 + w2 * scale_ld
+                else:
+                    hx1, hy1 = px1 - s_ang * w1 * scale_ld, py1 + c_ang * w1 * scale_ld
+                    hx2, hy2 = px2 - s_ang * w2 * scale_ld, py2 + c_ang * w2 * scale_ld
+                poly = Polygon([(px1,py1), (hx1,hy1), (hx2,hy2), (px2,py2)], facecolor='none', edgecolor='magenta', linewidth=0.8, zorder=3)
+                ax_load.add_patch(poly)
+                num_arrows = max(3, int((end_L - start_L) / 0.4))
+                xs = np.linspace(start_L, end_L, num_arrows)
+                for x_dist in xs:
+                    w_curr = w1 + (w2 - w1) * (x_dist - start_L) / max(end_L - start_L, 1e-5)
+                    px = x_dist * c_ang
+                    py = x_dist * s_ang
+                    hl = w_curr * scale_ld
+                    if dir_type == 'Gravity (Vertical ↓)':
+                        ax_load.arrow(px, py + hl, 0, -hl*0.9, head_width=0.08, head_length=0.1, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                    else:
+                        ax_load.arrow(px - s_ang*hl, py + c_ang*hl, s_ang*hl*0.9, -c_ang*hl*0.9, head_width=0.08, head_length=0.1, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
 
     # --- Reactions Plot ---
     for i, n in enumerate(nodes):
@@ -460,8 +517,18 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_se
                 ax_react.annotate("", xy=(x, y), xytext=(x, y - 1.2*np.sign(Ry)), arrowprops=dict(color='purple', width=0.5, headwidth=4))
                 ax_react.text(x, y - 1.5*np.sign(Ry), f"{abs(Ry):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
 
-    # --- 💡 Hatching Function (Outline with vertical lines, no fill) ---
+    # --- Diagrams Outline & Hatching ---
     def hatch_diagram(ax, val_key, scale, color_pos, color_neg):
+        plotted_texts = set()
+        
+        def write_val(txt_x, txt_y, v, rot=0):
+            if abs(v) > 0.05:
+                lbl = f"{abs(v):.1f}"
+                sig = f"{txt_x:.1f}_{txt_y:.1f}"
+                if sig not in plotted_texts:
+                    ax.text(txt_x, txt_y, lbl, color='black', fontsize=7, fontname='Arial', ha='center', va='center', rotation=rot)
+                    plotted_texts.add(sig)
+
         for el in elements:
             n1, n2 = nodes[el['n1']], nodes[el['n2']]
             x1, y1 = n1[0], n1[1]
@@ -471,36 +538,36 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_se
             if L_s < 1e-5: continue
             
             c, s = dx/L_s, dy/L_s
+            rot_ang = np.degrees(np.arctan2(dy, dx))
             
-            # --- رسم أسماء القطاعات على كل دياجرام بلون خفيف ---
+            # Profile Names
             mid_x, mid_y = x1 + dx/2, y1 + dy/2
             if el['type'] == 'frame':
                 offset_c, offset_s = -c*0.4, s*0.4
-                ax.text(mid_x + offset_s, mid_y + offset_c, el['sec'], color='gray', fontsize=6, alpha=0.8, ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
+                ax.text(mid_x + offset_s, mid_y + offset_c, el['sec'], color='gray', fontsize=6, alpha=0.8, ha='center', va='center', rotation=rot_ang)
             
             if el['type'] == 'truss' and val_key == 'N':
                 val = el['internal']['N'][0]
                 if abs(val) < 0.1: continue
                 nx, ny = -dy/L_s, dx/L_s
-                h = val * scale
+                h = max(0.4, abs(val) * scale) # Ensure min box height
                 color = color_pos if val >= 0 else color_neg
                 
                 p1, p2 = (x1, y1), (x2, y2)
                 p3, p4 = (x2 + nx * h, y2 + ny * h), (x1 + nx * h, y1 + ny * h)
                 
-                ax.plot([x1, p4[0], p3[0], x2, x1], [y1, p4[1], p3[1], y2, y1], color=color, linewidth=0.8)
+                ax.add_patch(Polygon([p1, p2, p3, p4], facecolor='none', edgecolor=color, linewidth=0.8, zorder=2))
                 
-                num_lines = max(5, int(L_s / 0.15))
+                num_lines = max(5, int(L_s / 0.3))
                 for i in range(1, num_lines):
                     frac = i / num_lines
                     lx, ly = x1 + frac * dx, y1 + frac * dy
                     ax.plot([lx, lx + nx * h], [ly, ly + ny * h], color=color, linewidth=0.3, alpha=0.6)
                     
                 mid_h_x, mid_h_y = x1 + dx/2 + nx*h/2, y1 + dy/2 + ny*h/2
-                ax.text(mid_h_x, mid_h_y, f"{abs(val):.1f}", color='black', fontsize=7, fontname='Arial', ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
+                write_val(mid_h_x, mid_h_y, val, rot_ang)
                 
-                # اسم القطاع موازي وملاصق للنهيز من الأسفل
-                ax.text(x1 + dx/2 - nx*0.2, y1 + dy/2 - ny*0.2, el['sec'], color='black', fontsize=6, fontname='Arial', ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
+                ax.text(x1 + dx/2 - nx*0.2, y1 + dy/2 - ny*0.2, el['sec'], color='black', fontsize=6, fontname='Arial', ha='center', va='center', rotation=rot_ang)
                 continue
                 
             if el['type'] == 'frame':
@@ -512,9 +579,8 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_se
                 py_arr = y1 + s * xs_arr + c * vals * scale
                 
                 ax.plot(np.append(x1, np.append(px_arr, x2)), np.append(y1, np.append(py_arr, y2)), color=color_pos, linewidth=0.8)
-                ax.plot([x1, x2], [y1, y2], color='black', linewidth=0.5)
                 
-                num_lines = max(4, int(L_s / 0.2))
+                num_lines = max(2, int(L_s / 0.4))
                 for i in range(1, num_lines):
                     frac = i / num_lines
                     lx, ly = x1 + frac * dx, y1 + frac * dy
@@ -524,28 +590,22 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_se
                     line_color = color_pos if lv >= 0 else color_neg
                     ax.plot([lx, hx], [ly, hy], color=line_color, linewidth=0.3, alpha=0.6)
                     
-                # 💡 طباعة القيم في البداية، النهاية، والـ Max
-                def write_val(x_base, y_base, v, offset=0.2):
-                    if abs(v) > 0.1:
-                        txt_x = x_base - s * v * scale - s * np.sign(v) * offset
-                        txt_y = y_base + c * v * scale + c * np.sign(v) * offset
-                        ax.text(txt_x, txt_y, f"{abs(v):.1f}", color='black', fontsize=7, fontname='Arial', ha='center', va='center')
-                
-                write_val(x1, y1, v_start)
-                write_val(x2, y2, v_end)
-                
-                max_idx = np.argmax(np.abs(vals))
-                if 0 < max_idx < len(vals)-1:
-                    v_max = vals[max_idx]
-                    x_m = x1 + c * xs_arr[max_idx]
-                    y_m = y1 + s * xs_arr[max_idx]
-                    write_val(x_m, y_m, v_max, offset=0.3)
+                offset = 0.2
+                if el['n1'] in major_nodes:
+                    txt_x = x1 - s * v_start * scale - s * np.sign(v_start) * offset
+                    txt_y = y1 + c * v_start * scale + c * np.sign(v_start) * offset
+                    write_val(txt_x, txt_y, v_start)
+                    
+                if el['n2'] in major_nodes:
+                    txt_x = x2 - s * v_end * scale - s * np.sign(v_end) * offset
+                    txt_y = y2 + c * v_end * scale + c * np.sign(v_end) * offset
+                    write_val(txt_x, txt_y, v_end)
 
     hatch_diagram(ax_n, 'N', scales['N'], 'blue', 'red')    
     hatch_diagram(ax_v, 'V', scales['V'], 'purple', 'magenta') 
-    hatch_diagram(ax_m, 'M', scales['M'], 'green', 'yellow')
+    hatch_diagram(ax_m, 'M', scales['M'], 'green', 'y')
     
-    plt.subplots_adjust(hspace=0.4, bottom=0.1)
+    plt.subplots_adjust(hspace=0.4, wspace=0.1, bottom=0.1)
     img_buf = io.BytesIO()
     plt.savefig(img_buf, format='png', dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -630,7 +690,6 @@ def generate_inclined_report(sys_data):
 def render_inclined_module():
     st.markdown("## 📐 Inclined Formwork System (Advanced FEA)")
     
-    # تهيئة الذاكرة لحفظ نتائج الحل
     if 'inclined_solved' not in st.session_state:
         st.session_state.inclined_solved = False
         
@@ -694,7 +753,7 @@ def render_inclined_module():
                 
                 applied_loads.append({'type': l_type, 'start': start_l, 'end': end_l, 'w1': w1, 'w2': w2, 'dir': ldir})
 
-    nodes, elements, nodal_loads, L_tot, X_tot = build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_sec, base_sec, strut_types)
+    nodes, elements, nodal_loads, L_tot, X_tot, major_nodes = build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_sec, base_sec, strut_types)
 
     with c_plot:
         st.markdown("<h4 style='text-align: center; font-family: Arial; font-weight: normal; border-bottom: 1px solid black; padding-bottom: 5px;'>Live Assigned Loads</h4>", unsafe_allow_html=True)
@@ -709,7 +768,7 @@ def render_inclined_module():
             with st.spinner("Building Matrix & Solving FEA..."):
                 U, R = solve_fea_engine(nodes, elements, nodal_loads)
                 st.session_state.inclined_fea_data = {
-                    'U': U, 'R': R, 'nodes': nodes, 'elements': elements,
+                    'U': U, 'R': R, 'nodes': nodes, 'elements': elements, 'major_nodes': major_nodes,
                     'sys_data': {
                         'L_tot': L_tot, 'angle': angle_deg, 'W': "Variable", 'ld_dir': "Variable",
                         'inc_sec': inc_sec, 'base_sec': base_sec
@@ -717,7 +776,6 @@ def render_inclined_module():
                 }
                 st.session_state.inclined_solved = True
     
-    # 💡 إظهار أدوات التحكم والنتائج فقط بعد الضغط على Run مع الاحتفاظ بها نشطة
     if st.session_state.inclined_solved:
         fea_data = st.session_state.inclined_fea_data
         
@@ -729,7 +787,7 @@ def render_inclined_module():
             sc_m = c_s3.slider("Moment Scale", 0.01, 0.50, 0.10, step=0.01)
             scales = {'N': sc_n, 'V': sc_v, 'M': sc_m}
             
-        img_buf = plot_sap2000_diagrams(fea_data['nodes'], fea_data['elements'], fea_data['R'], scales, fea_data['sys_data']['inc_sec'], fea_data['sys_data']['base_sec'])
+        img_buf = plot_sap2000_diagrams(fea_data['nodes'], fea_data['elements'], fea_data['R'], scales, fea_data['sys_data']['inc_sec'], fea_data['sys_data']['base_sec'], fea_data['major_nodes'], applied_loads, angle_deg)
         st.image(img_buf, use_container_width=True)
         
         max_M_inc, max_V_inc = 0, 0
