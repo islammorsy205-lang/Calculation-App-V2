@@ -200,7 +200,6 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
             'E': base_props.get('E', E_st), 'A': base_props.get('A', 0.00343), 'I': base_props.get('I', 0.00000122)
         })
         
-    # Connect Struts to base X locations
     X_cum_strut = 0.0
     for j in range(len(L_segs)):
         target_L = round(target_Ls[j], 4)
@@ -291,7 +290,6 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
     fixed_dofs = []
     K_penalty = 1e12
     
-    # 💡 تطبيق الركائز المتطورة (Advanced Boundary Conditions)
     for sup in supports_list:
         n = sup['node']
         t = sup['type']
@@ -365,7 +363,6 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
             ])
             f_end = k_loc @ u_loc - f_eq_loc
             
-            # 💡 دقة أعلى للحصول على الـ Peaks بشكل مثالي
             xs = np.linspace(0, L, 51) 
             N_arr = np.zeros_like(xs)
             V_arr = np.zeros_like(xs)
@@ -392,28 +389,50 @@ def get_img_buf(fig):
     return buf
 
 def draw_base_geometry(ax, nodes, elements, supports_list):
-    # رسم خطوط العناصر
     for el in elements:
         n1, n2 = nodes[el['n1']], nodes[el['n2']]
         color = 'black' if el['type'] == 'frame' else 'gray'
         style = '-' if el['type'] == 'frame' else '--'
         ax.plot([n1[0], n2[0]], [n1[1], n2[1]], color=color, linestyle=style, linewidth=0.5, zorder=1)
         
-    # رسم الركائز بأشكال هندسية دقيقة
     for sup in supports_list:
         n = sup['node']
         x, y = nodes[n][0], nodes[n][1]
         t = sup['type']
         a = sup['angle']
+        
+        rad = np.radians(a)
+        nx, ny = np.sin(rad), -np.cos(rad) 
+        tx, ty = -ny, nx 
+        
         if t == 'Fixed':
             ax.plot(x, y, marker='s', color='blue', markersize=6, zorder=5)
+            ax.plot([x - 0.2*tx, x + 0.2*tx], [y - 0.2*ty, y + 0.2*ty], color='blue', lw=2, zorder=4)
         elif t == 'Hinged':
-            ax.plot(x, y, marker='^', color='orange', markersize=8, zorder=5)
+            h, w = 0.3, 0.2
+            p1 = (x, y)
+            p2 = (x + h*nx + w*tx, y + h*ny + w*ty)
+            p3 = (x + h*nx - w*tx, y + h*ny - w*ty)
+            poly = Polygon([p1, p2, p3], facecolor='orange', edgecolor='black', lw=0.5, zorder=5)
+            ax.add_patch(poly)
+            ax.plot([p2[0]+0.1*tx, p3[0]-0.1*tx], [p2[1]+0.1*ty, p3[1]-0.1*ty], color='orange', lw=1.5, zorder=4)
         elif t == 'Roller':
-            ax.plot(x, y, marker='o', color='green', markersize=6, zorder=5)
-            rad = np.radians(a)
-            dx, dy = np.cos(rad), np.sin(rad)
-            ax.plot([x - 0.4*dx, x + 0.4*dx], [y - 0.4*dy, y + 0.4*dy], color='green', lw=1.5, zorder=4)
+            h, w, r = 0.25, 0.15, 0.08
+            p1 = (x, y)
+            p2 = (x + h*nx + w*tx, y + h*ny + w*ty)
+            p3 = (x + h*nx - w*tx, y + h*ny - w*ty)
+            poly = Polygon([p1, p2, p3], facecolor='green', edgecolor='black', lw=0.5, zorder=5)
+            ax.add_patch(poly)
+            
+            circ_x, circ_y = x + (h + r)*nx, y + (h + r)*ny
+            circle = plt.Circle((circ_x, circ_y), r, facecolor='none', edgecolor='green', lw=1.0, zorder=5)
+            ax.add_patch(circle)
+            
+            base_dist = h + 2*r + 0.05
+            line_w = 0.25
+            lx1, ly1 = x + base_dist*nx - line_w*tx, y + base_dist*ny - line_w*ty
+            lx2, ly2 = x + base_dist*nx + line_w*tx, y + base_dist*ny + line_w*ty
+            ax.plot([lx1, lx2], [ly1, ly2], color='green', lw=1.5, zorder=4)
 
 def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, base_sec, is_n_diagram=False):
     angle_rad = np.radians(angle_deg)
@@ -661,7 +680,6 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
             if el['type'] == 'frame':
                 xs_arr = el['internal']['x']
                 vals_orig = el['internal'][val_key]
-                # 💡 عكس اتجاه العزوم لتُرسم ناحية الشد
                 plot_vals = -vals_orig if val_key == 'M' else vals_orig
                 
                 px_arr = x1 + c * xs_arr - s * plot_vals * scale
@@ -692,7 +710,6 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                     txt_y = y2 + c * v_end * scale + c * np.sign(v_end) * offset
                     write_val(txt_x, txt_y, vals_orig[-1])
                     
-                # 💡 اكتشاف ورسم قمم العزوم الموجبة والسالبة (Mid-span Peaks)
                 if val_key == 'M':
                     for i in range(1, len(plot_vals)-1):
                         v_prev, v_curr, v_next = plot_vals[i-1], plot_vals[i], plot_vals[i+1]
@@ -704,7 +721,6 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                                 
         return get_img_buf(fig_f)
 
-    # --- 3. Generate N, V, M ---
     figs_dict['N'] = create_force_diagram('N', scales['N'], 'blue', 'red')
     figs_dict['V'] = create_force_diagram('V', scales['V'], 'purple', 'magenta')
     figs_dict['M'] = create_force_diagram('M', scales['M'], 'green', 'y')
@@ -887,7 +903,6 @@ def render_inclined_module():
         sang = cs3.number_input(f"Angle {i+1}", value=0.0, step=15.0, key=f"sang_{i}", on_change=lambda: st.session_state.update(inclined_solved=False)) if stype == "Roller" else 0.0
         base_sups.append({'x': sx, 'type': stype, 'angle': sang})
 
-    # 💡 تقسيم الشاشة إلى جزئين (إدخال الأحمال يميناً والشاشة التفاعلية يساراً) لعدم تشتيت العين
     c_in, c_plot = st.columns([1.3, 1])
     
     with c_in:
