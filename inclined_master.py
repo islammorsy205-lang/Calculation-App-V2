@@ -449,33 +449,33 @@ def draw_base_geometry(ax, nodes, elements, supports_list):
         tx, ty = -ny, nx 
         
         if t == 'Fixed':
-            ax.plot(x, y, marker='s', color='blue', markersize=6, zorder=5)
-            ax.plot([x - 0.2*tx, x + 0.2*tx], [y - 0.2*ty, y + 0.2*ty], color='blue', lw=2, zorder=4)
+            ax.plot(x, y, marker='s', color='limegreen', markersize=6, zorder=5)
+            ax.plot([x - 0.2*tx, x + 0.2*tx], [y - 0.2*ty, y + 0.2*ty], color='limegreen', lw=2, zorder=4)
         elif t == 'Hinged':
             h, w = 0.3, 0.2
             p1 = (x, y)
             p2 = (x + h*nx + w*tx, y + h*ny + w*ty)
             p3 = (x + h*nx - w*tx, y + h*ny - w*ty)
-            poly = Polygon([p1, p2, p3], facecolor='orange', edgecolor='black', lw=0.5, zorder=5)
+            poly = Polygon([p1, p2, p3], facecolor='limegreen', edgecolor='black', lw=0.5, zorder=5)
             ax.add_patch(poly)
-            ax.plot([p2[0]+0.1*tx, p3[0]-0.1*tx], [p2[1]+0.1*ty, p3[1]-0.1*ty], color='orange', lw=1.5, zorder=4)
+            ax.plot([p2[0]+0.1*tx, p3[0]-0.1*tx], [p2[1]+0.1*ty, p3[1]-0.1*ty], color='limegreen', lw=1.5, zorder=4)
         elif t == 'Roller':
             h, w, r = 0.25, 0.15, 0.08
             p1 = (x, y)
             p2 = (x + h*nx + w*tx, y + h*ny + w*ty)
             p3 = (x + h*nx - w*tx, y + h*ny - w*ty)
-            poly = Polygon([p1, p2, p3], facecolor='green', edgecolor='black', lw=0.5, zorder=5)
+            poly = Polygon([p1, p2, p3], facecolor='limegreen', edgecolor='black', lw=0.5, zorder=5)
             ax.add_patch(poly)
             
             circ_x, circ_y = x + (h + r)*nx, y + (h + r)*ny
-            circle = plt.Circle((circ_x, circ_y), r, facecolor='none', edgecolor='green', lw=1.0, zorder=5)
+            circle = plt.Circle((circ_x, circ_y), r, facecolor='none', edgecolor='limegreen', lw=1.0, zorder=5)
             ax.add_patch(circle)
             
-            base_dist = h + 2*r + 0.05
-            line_w = 0.25
+            base_dist = h + 2*r  # Adjusted to touch circle
+            line_w = 0.12        # Reduced length
             lx1, ly1 = x + base_dist*nx - line_w*tx, y + base_dist*ny - line_w*ty
             lx2, ly2 = x + base_dist*nx + line_w*tx, y + base_dist*ny + line_w*ty
-            ax.plot([lx1, lx2], [ly1, ly2], color='green', lw=1.5, zorder=4)
+            ax.plot([lx1, lx2], [ly1, ly2], color='limegreen', lw=1.5, zorder=4)
 
 def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, base_sec, is_n_diagram=False):
     angle_rad = np.radians(angle_deg)
@@ -483,11 +483,11 @@ def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, ba
     
     inc_mid_x = (L_tot/2) * c_ang
     inc_mid_y = (L_tot/2) * s_ang
-    ax.text(inc_mid_x - s_ang*0.15, inc_mid_y + c_ang*0.15, get_short_name(inc_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', rotation=angle_deg, fontname='Arial')
+    ax.text(inc_mid_x - s_ang*0.15, inc_mid_y + c_ang*0.15, get_short_name(inc_sec), color='black', fontsize=7, alpha=0.9, ha='center', va='center', rotation=angle_deg, fontname='Arial')
     
     if base_sec != "None (Direct to Ground)":
         base_mid_x = X_tot/2
-        ax.text(base_mid_x, -0.2, get_short_name(base_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', fontname='Arial')
+        ax.text(base_mid_x, -0.2, get_short_name(base_sec), color='black', fontsize=7, alpha=0.9, ha='center', va='center', fontname='Arial')
     
     drawn_struts = set()
     for el in elements:
@@ -502,9 +502,9 @@ def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, ba
                 rot = np.degrees(np.arctan2(dy, dx))
                 
                 if is_n_diagram:
-                    ax.text(mid_x - nx*0.3, mid_y - ny*0.3, get_short_name(el['sec']), color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
+                    ax.text(mid_x - nx*0.3, mid_y - ny*0.3, get_short_name(el['sec']), color='black', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
                 else:
-                    ax.text(mid_x + nx*0.15, mid_y + ny*0.15, get_short_name(el['sec']), color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
+                    ax.text(mid_x + nx*0.15, mid_y + ny*0.15, get_short_name(el['sec']), color='black', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
                 drawn_struts.add(sig)
 
 def draw_reaction_arrow(ax, node_x, node_y, force_mag, axis_nx, axis_ny):
@@ -515,10 +515,11 @@ def draw_reaction_arrow(ax, node_x, node_y, force_mag, axis_nx, axis_ny):
     dy = sgn * axis_ny
     start_x = node_x - arr_L * dx
     start_y = node_y - arr_L * dy
+    arr_c = 'blue' if force_mag >= 0 else 'red'
     ax.arrow(start_x, start_y, arr_L*dx, arr_L*dy, length_includes_head=True, 
-             head_width=0.15, head_length=0.2, fc='purple', ec='purple', lw=1.0, zorder=5)
+             head_width=0.15, head_length=0.2, fc=arr_c, ec=arr_c, lw=1.0, zorder=5)
     ax.text(start_x - 0.25*dx, start_y - 0.25*dy, f"{abs(force_mag):.1f}", 
-            color='purple', fontsize=7, fontname='Arial', ha='center', va='center')
+            color='black', fontsize=7, fontname='Arial', ha='center', va='center')
 
 def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg, inc_sec, base_sec, L_tot, X_tot, supports_list):
     apply_plot_styles()
@@ -536,7 +537,7 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     for i, seg in enumerate(L_segs):
         px = (curr_l + seg/2) * c_ang
         py = (curr_l + seg/2) * s_ang
-        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center', fontname='Arial')
+        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='black', fontsize=7, rotation=angle_deg, ha='center', va='center', fontname='Arial')
         curr_l += seg
         
     if base_sec != "None (Direct to Ground)":
@@ -544,7 +545,7 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
         for i, seg in enumerate(X_segs):
             px = curr_x + seg/2
             py = 0.0
-            ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center', fontname='Arial')
+            ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='black', fontsize=7, ha='center', va='center', fontname='Arial')
             curr_x += seg
 
     if applied_loads:
@@ -559,15 +560,17 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
             
             if ld['type'] == 'Point Load':
                 arrow_len = 1.0
+                pt_c = 'blue' if w1 >= 0 else 'red'
                 if dir_type == 'Gravity (Vertical ↓)':
-                    ax.arrow(px1, py1 + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                    ax.text(px1, py1 + arrow_len + 0.3, f"{w1}", color='fuchsia', fontsize=8, ha='center', fontname='Arial')
+                    ax.arrow(px1, py1 + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc=pt_c, ec=pt_c, zorder=4, linewidth=0.5)
+                    ax.text(px1, py1 + arrow_len + 0.3, f"{w1}", color='black', fontsize=8, ha='center', fontname='Arial')
                 else:
                     start_x = px1 - s_ang*(arrow_len+0.1)
                     start_y = py1 + c_ang*(arrow_len+0.1)
-                    ax.arrow(start_x, start_y, s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                    ax.text(start_x - s_ang*0.2, start_y + c_ang*0.2, f"{w1}", color='fuchsia', fontsize=8, ha='center', rotation=angle_deg, fontname='Arial')
+                    ax.arrow(start_x, start_y, s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc=pt_c, ec=pt_c, zorder=4, linewidth=0.5)
+                    ax.text(start_x - s_ang*0.2, start_y + c_ang*0.2, f"{w1}", color='black', fontsize=8, ha='center', rotation=angle_deg, fontname='Arial')
             else:
+                ld_c = 'blue' if (w1 + w2)/2.0 >= 0 else 'red'
                 if dir_type == 'Gravity (Vertical ↓)':
                     hx1, hy1 = px1, py1 + w1 * scale_ld
                     hx2, hy2 = px2, py2 + w2 * scale_ld
@@ -575,7 +578,7 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
                     hx1, hy1 = px1 - s_ang * w1 * scale_ld, py1 + c_ang * w1 * scale_ld
                     hx2, hy2 = px2 - s_ang * w2 * scale_ld, py2 + c_ang * w2 * scale_ld
                     
-                poly = Polygon([(px1,py1), (hx1,hy1), (hx2,hy2), (px2,py2)], facecolor='none', edgecolor='magenta', linewidth=0.8, zorder=3)
+                poly = Polygon([(px1,py1), (hx1,hy1), (hx2,hy2), (px2,py2)], facecolor='none', edgecolor=ld_c, linewidth=0.8, zorder=3)
                 ax.add_patch(poly)
                 
                 num_arrows = max(3, int((end_L - start_L) / 0.4))
@@ -586,17 +589,18 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
                     px = x_dist * c_ang
                     py = x_dist * s_ang
                     hl = w_curr * scale_ld
+                    arr_c = 'blue' if w_curr >= 0 else 'red'
                     if dir_type == 'Gravity (Vertical ↓)':
-                        ax.arrow(px, py + hl, 0, -hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                        ax.arrow(px, py + hl, 0, -hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc=arr_c, ec=arr_c, linewidth=0.3, zorder=2)
                     else:
-                        ax.arrow(px - s_ang*hl, py + c_ang*hl, s_ang*hl, -c_ang*hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                        ax.arrow(px - s_ang*hl, py + c_ang*hl, s_ang*hl, -c_ang*hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc=arr_c, ec=arr_c, linewidth=0.3, zorder=2)
                         
                 if dir_type == 'Gravity (Vertical ↓)':
-                    ax.text(px1, py1 + w1*scale_ld + 0.15, f"{w1}", color='magenta', fontsize=7, ha='center', fontname='Arial')
-                    ax.text(px2, py2 + w2*scale_ld + 0.15, f"{w2}", color='magenta', fontsize=7, ha='center', fontname='Arial')
+                    ax.text(px1, py1 + w1*scale_ld + 0.15, f"{w1}", color='black', fontsize=7, ha='center', fontname='Arial')
+                    ax.text(px2, py2 + w2*scale_ld + 0.15, f"{w2}", color='black', fontsize=7, ha='center', fontname='Arial')
                 else:
-                    ax.text(hx1 - s_ang*0.15, hy1 + c_ang*0.15, f"{w1}", color='magenta', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
-                    ax.text(hx2 - s_ang*0.15, hy2 + c_ang*0.15, f"{w2}", color='magenta', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
+                    ax.text(hx1 - s_ang*0.15, hy1 + c_ang*0.15, f"{w1}", color='black', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
+                    ax.text(hx2 - s_ang*0.15, hy2 + c_ang*0.15, f"{w2}", color='black', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
 
     return get_img_buf(fig)
 
@@ -626,15 +630,17 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
             
             if ld['type'] == 'Point Load':
                 arrow_len = 1.0
+                pt_c = 'blue' if w1 >= 0 else 'red'
                 if dir_type == 'Gravity (Vertical ↓)':
-                    ax_ld.arrow(px1, py1 + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                    ax_ld.text(px1, py1 + arrow_len + 0.3, f"{w1}", color='fuchsia', fontsize=8, ha='center', fontname='Arial')
+                    ax_ld.arrow(px1, py1 + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc=pt_c, ec=pt_c, zorder=4, linewidth=0.5)
+                    ax_ld.text(px1, py1 + arrow_len + 0.3, f"{w1}", color='black', fontsize=8, ha='center', fontname='Arial')
                 else:
                     start_x = px1 - s_ang*(arrow_len+0.1)
                     start_y = py1 + c_ang*(arrow_len+0.1)
-                    ax_ld.arrow(start_x, start_y, s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                    ax_ld.text(start_x - s_ang*0.2, start_y + c_ang*0.2, f"{w1}", color='fuchsia', fontsize=8, ha='center', rotation=angle_deg, fontname='Arial')
+                    ax_ld.arrow(start_x, start_y, s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, length_includes_head=True, fc=pt_c, ec=pt_c, zorder=4, linewidth=0.5)
+                    ax_ld.text(start_x - s_ang*0.2, start_y + c_ang*0.2, f"{w1}", color='black', fontsize=8, ha='center', rotation=angle_deg, fontname='Arial')
             else:
+                ld_c = 'blue' if (w1 + w2)/2.0 >= 0 else 'red'
                 if dir_type == 'Gravity (Vertical ↓)':
                     hx1, hy1 = px1, py1 + w1 * scale_ld
                     hx2, hy2 = px2, py2 + w2 * scale_ld
@@ -642,7 +648,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                     hx1, hy1 = px1 - s_ang * w1 * scale_ld, py1 + c_ang * w1 * scale_ld
                     hx2, hy2 = px2 - s_ang * w2 * scale_ld, py2 + c_ang * w2 * scale_ld
                     
-                poly = Polygon([(px1,py1), (hx1,hy1), (hx2,hy2), (px2,py2)], facecolor='none', edgecolor='magenta', linewidth=0.8, zorder=3)
+                poly = Polygon([(px1,py1), (hx1,hy1), (hx2,hy2), (px2,py2)], facecolor='none', edgecolor=ld_c, linewidth=0.8, zorder=3)
                 ax_ld.add_patch(poly)
                 
                 num_arrows = max(3, int((end_L - start_L) / 0.4))
@@ -653,17 +659,18 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                     px = x_dist * c_ang
                     py = x_dist * s_ang
                     hl = w_curr * scale_ld
+                    arr_c = 'blue' if w_curr >= 0 else 'red'
                     if dir_type == 'Gravity (Vertical ↓)':
-                        ax_ld.arrow(px, py + hl, 0, -hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                        ax_ld.arrow(px, py + hl, 0, -hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc=arr_c, ec=arr_c, linewidth=0.3, zorder=2)
                     else:
-                        ax_ld.arrow(px - s_ang*hl, py + c_ang*hl, s_ang*hl, -c_ang*hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc='magenta', ec='magenta', linewidth=0.3, zorder=2)
+                        ax_ld.arrow(px - s_ang*hl, py + c_ang*hl, s_ang*hl, -c_ang*hl, head_width=0.08, head_length=0.1, length_includes_head=True, fc=arr_c, ec=arr_c, linewidth=0.3, zorder=2)
                         
                 if dir_type == 'Gravity (Vertical ↓)':
-                    ax_ld.text(px1, py1 + w1*scale_ld + 0.15, f"{w1}", color='magenta', fontsize=7, ha='center', fontname='Arial')
-                    ax_ld.text(px2, py2 + w2*scale_ld + 0.15, f"{w2}", color='magenta', fontsize=7, ha='center', fontname='Arial')
+                    ax_ld.text(px1, py1 + w1*scale_ld + 0.15, f"{w1}", color='black', fontsize=7, ha='center', fontname='Arial')
+                    ax_ld.text(px2, py2 + w2*scale_ld + 0.15, f"{w2}", color='black', fontsize=7, ha='center', fontname='Arial')
                 else:
-                    ax_ld.text(hx1 - s_ang*0.15, hy1 + c_ang*0.15, f"{w1}", color='magenta', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
-                    ax_ld.text(hx2 - s_ang*0.15, hy2 + c_ang*0.15, f"{w2}", color='magenta', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
+                    ax_ld.text(hx1 - s_ang*0.15, hy1 + c_ang*0.15, f"{w1}", color='black', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
+                    ax_ld.text(hx2 - s_ang*0.15, hy2 + c_ang*0.15, f"{w2}", color='black', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
     figs_dict['Load'] = get_img_buf(fig_ld)
 
     # --- 2. Reactions Diagram ---
@@ -756,7 +763,13 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                 px_arr = x1 + c * xs_arr - s * plot_vals * scale
                 py_arr = y1 + s * xs_arr + c * plot_vals * scale
                 
-                ax_f.plot(np.append(x1, np.append(px_arr, x2)), np.append(y1, np.append(py_arr, y2)), color=color_pos, linewidth=0.8)
+                # رسم خط التغطية الخارجي مقطعاً حسب الإشارة (أزرق/أحمر)
+                ax_f.plot([x1, px_arr[0]], [y1, py_arr[0]], color=color_pos if vals_orig[0] >= 0 else color_neg, linewidth=0.8)
+                for k in range(len(px_arr)-1):
+                    avg_v = (vals_orig[k] + vals_orig[k+1]) / 2.0
+                    seg_color = color_pos if avg_v >= 0 else color_neg
+                    ax_f.plot([px_arr[k], px_arr[k+1]], [py_arr[k], py_arr[k+1]], color=seg_color, linewidth=0.8)
+                ax_f.plot([px_arr[-1], x2], [py_arr[-1], y2], color=color_pos if vals_orig[-1] >= 0 else color_neg, linewidth=0.8)
                 
                 num_lines = max(2, int(L_s / 0.4))
                 for i in range(1, num_lines):
@@ -792,9 +805,10 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                                 
         return get_img_buf(fig_f)
 
+    # توحيد ألوان الدياجرامات لتكون (أزرق للموجب، أحمر للسالب)
     figs_dict['N'] = create_force_diagram('N', scales['N'], 'blue', 'red')
-    figs_dict['V'] = create_force_diagram('V', scales['V'], 'purple', 'magenta')
-    figs_dict['M'] = create_force_diagram('M', scales['M'], 'green', 'y')
+    figs_dict['V'] = create_force_diagram('V', scales['V'], 'blue', 'red')
+    figs_dict['M'] = create_force_diagram('M', scales['M'], 'blue', 'red')
 
     return figs_dict
 
@@ -1029,7 +1043,7 @@ def render_inclined_module():
         for item in range(int(num_items)):
             if l_type == "Point Load":
                 c1, c2 = st.columns(2)
-                start_l = c1.number_input(f"P{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                start_l = c1.number_input(f"P{item+1} Distance from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 w1 = c2.number_input(f"P{item+1} Value (kN)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l, 'w1': w1, 'w2': w1, 'dir': ldir})
             elif l_type == "Uniform":
