@@ -59,7 +59,6 @@ def apply_plot_styles():
     mpl.rcParams['font.size'] = 7
     mpl.rcParams['font.weight'] = 'normal'
 
-# 💡 دالة لتنظيف أسماء القطاعات وإزالة الأقواس (Range)
 def get_short_name(sec_name):
     return re.sub(r'\s*\(.*?\)', '', sec_name).strip()
 
@@ -392,7 +391,6 @@ def get_img_buf(fig):
     buf.seek(0)
     return buf
 
-# 💡 دالة متخصصة لرسم الركائز بشكل هندسي دقيق (SAP2000 Style)
 def draw_base_geometry(ax, nodes, elements, supports_list):
     for el in elements:
         n1, n2 = nodes[el['n1']], nodes[el['n2']]
@@ -439,7 +437,6 @@ def draw_base_geometry(ax, nodes, elements, supports_list):
             lx2, ly2 = x + base_dist*nx + line_w*tx, y + base_dist*ny + line_w*ty
             ax.plot([lx1, lx2], [ly1, ly2], color='green', lw=1.5, zorder=4)
 
-# 💡 دالة متخصصة لرسم أسماء القطاعات بدون تكرار
 def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, base_sec, is_n_diagram=False):
     angle_rad = np.radians(angle_deg)
     c_ang, s_ang = np.cos(angle_rad), np.sin(angle_rad)
@@ -469,7 +466,6 @@ def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, ba
                     ax.text(mid_x + nx*0.15, mid_y + ny*0.15, get_short_name(el['sec']), color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
                 drawn_struts.add(sig)
 
-# 💡 دالة مساعدة لرسم سهم رد الفعل بشكل دقيق
 def draw_reaction_arrow(ax, node_x, node_y, force_mag, axis_nx, axis_ny):
     if abs(force_mag) < 0.1: return
     arr_L = 0.8
@@ -641,6 +637,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
         a = sup['angle']
         
         Rx, Ry = R_reactions[3*n], R_reactions[3*n+1]
+        
         rad = np.radians(a)
         c_a, s_a = np.cos(rad), np.sin(rad)
         
@@ -648,6 +645,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
         R_v = -Rx * s_a + Ry * c_a
         x, y = nodes[n][0], nodes[n][1]
         
+        # 💡 تم استبدال الـ annotate بدالة draw_reaction_arrow الأكثر دقة للأسهم المائلة
         if t == 'Roller':
             draw_reaction_arrow(ax_react, x, y, R_v, -s_a, c_a)
         else:
@@ -688,7 +686,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
             if el['type'] == 'truss' and val_key == 'N':
                 val = el['internal']['N'][0]
                 if abs(val) < 0.1: continue
-                nx, ny = -dy/L_s, dx/L_s
+                nx, ny = dy/L_s, -dx/L_s  # Flipped internally to match SAP default visualization preference
                 h = max(0.4, abs(val) * scale) 
                 color = color_pos if val >= 0 else color_neg
                 
@@ -710,7 +708,8 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
             if el['type'] == 'frame':
                 xs_arr = el['internal']['x']
                 vals_orig = el['internal'][val_key]
-                plot_vals = -vals_orig if val_key == 'M' else vals_orig
+                # 💡 عكس اتجاه الرسم بناءً على طلبك السابق ليطابق SAP2000
+                plot_vals = -vals_orig 
                 
                 px_arr = x1 + c * xs_arr - s * plot_vals * scale
                 py_arr = y1 + s * xs_arr + c * plot_vals * scale
@@ -724,7 +723,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                     idx_val = int(frac * (len(plot_vals)-1))
                     lv = plot_vals[idx_val]
                     hx, hy = lx - s * lv * scale, ly + c * lv * scale
-                    line_color = color_pos if lv >= 0 else color_neg
+                    line_color = color_pos if vals_orig[idx_val] >= 0 else color_neg
                     ax_f.plot([lx, hx], [ly, hy], color=line_color, linewidth=0.3, alpha=0.6)
                     
                 offset = 0.25
