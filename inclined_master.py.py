@@ -12,19 +12,13 @@ from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-# ---------------------------------------------------------
-# استدعاء قواعد البيانات من النظام الأساسي
-# ---------------------------------------------------------
 try:
     from config import SECTIONS_DB, STRUTS_DB
 except ImportError:
-    st.error("⚠️ برجاء التأكد من وجود ملف config.py الذي يحتوي على SECTIONS_DB و STRUTS_DB في نفس المجلد.")
+    st.error("⚠️ برجاء التأكد من وجود ملف config.py")
     SECTIONS_DB = {}
     STRUTS_DB = {}
 
-# =========================================================
-# 1. Advanced 2D Frame FEA Solver for Inclined Systems
-# =========================================================
 def solve_inclined_fea(nodes, elements, gravity_loads):
     num_nodes = len(nodes)
     NDOF = num_nodes * 3
@@ -74,31 +68,30 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
         el_idx = gl['mem_idx']
         W_gravity = gl['W'] 
         el = elements[el_idx]
-        L = el['L']
-        c, s = el['c'], el['s']
+        L, c, s = el['L'], el['c'], el['s']
         
-        w_y = W_gravity * c
-        w_x = -W_gravity * s
+        p_x = -W_gravity * s
+        p_y = -W_gravity * c
         
-        f_loc = np.array([
-            w_x * L / 2.0,            
-            -w_y * L / 2.0,           
-            -w_y * L**2 / 12.0,       
-            w_x * L / 2.0,            
-            -w_y * L / 2.0,           
-            w_y * L**2 / 12.0         
+        f_eq_loc = np.array([
+            p_x * L / 2.0,
+            p_y * L / 2.0,
+            p_y * L**2 / 12.0,
+            p_x * L / 2.0,
+            p_y * L / 2.0,
+            -p_y * L**2 / 12.0
         ])
         
         T = np.array([
             [c, s, 0, 0, 0, 0], [-s, c, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0],
             [0, 0, 0, c, s, 0], [0, 0, 0, -s, c, 0], [0, 0, 0, 0, 0, 1]
         ])
-        f_glob = T.T @ f_loc
+        f_eq_glob = T.T @ f_eq_loc
         
         n1, n2 = el['n1'], el['n2']
         dof_idx = [3*n1, 3*n1+1, 3*n1+2, 3*n2, 3*n2+1, 3*n2+2]
         for r in range(6):
-            F[dof_idx[r]] -= f_glob[r] 
+            F[dof_idx[r]] += f_eq_glob[r] 
             
     free_dof = []
     for i, n in enumerate(nodes):
@@ -143,27 +136,34 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
                 [0, -12*E*I/L**3, -6*E*I/L**2, 0, 12*E*I/L**3, -6*E*I/L**2],
                 [0, 6*E*I/L**2, 2*E*I/L, 0, -6*E*I/L**2, 4*E*I/L]
             ])
-            f_loc = k_loc @ u_loc
             
-            w_y, w_x = 0, 0
+            p_x, p_y = 0, 0
             for gl in gravity_loads:
                 if elements[gl['mem_idx']] == el:
                     W_gravity = gl['W']
-                    w_y = -W_gravity * c
-                    w_x = -W_gravity * s
+                    p_x = -W_gravity * s
+                    p_y = -W_gravity * c
                     
+            f_fixed_loc = np.array([
+                -p_x * L / 2.0,
+                -p_y * L / 2.0,
+                -p_y * L**2 / 12.0,
+                -p_x * L / 2.0,
+                -p_y * L / 2.0,
+                p_y * L**2 / 12.0
+            ])
+            
+            f_end = k_loc @ u_loc + f_fixed_loc
+            
             xs = np.linspace(0, L, 11)
-            N_arr = np.full_like(xs, -f_loc[0]) - w_x * xs
-            V_arr = np.full_like(xs, f_loc[1]) + w_y * xs
-            M_arr = np.full_like(xs, -f_loc[2]) + f_loc[1] * xs + 0.5 * w_y * xs**2
+            N_arr = -f_end[0] - p_x * xs
+            V_arr = f_end[1] + p_y * xs
+            M_arr = -f_end[2] + f_end[1] * xs + 0.5 * p_y * xs**2
             
             el['internal'] = {'N': N_arr, 'V': V_arr, 'M': M_arr, 'x': xs}
             
     return U, R_reactions, nodes, elements
 
-# =========================================================
-# 2. Engine for Plotting the Results
-# =========================================================
 def plot_inclined_system(nodes, elements, R_reactions):
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     ax_geom, ax_n, ax_v, ax_m = axes.flatten()
@@ -257,9 +257,6 @@ def plot_inclined_system(nodes, elements, R_reactions):
     img_buf.seek(0)
     return img_buf
 
-# =========================================================
-# 3. Report Generator for Inclined Systems
-# =========================================================
 def generate_inclined_report(sys_data):
     if os.path.exists("Acrow_Template.docx"):
         doc = Document("Acrow_Template.docx")
@@ -278,6 +275,8 @@ def generate_inclined_report(sys_data):
     
     def add_line(text, bold=False):
         p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.line_spacing = 1.5
         r = p.add_run(text)
         r.font.name = 'Arial'
         r.font.size = Pt(12)
@@ -285,6 +284,8 @@ def generate_inclined_report(sys_data):
         
     def add_check(component, param, act, allw, unit):
         p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.line_spacing = 1.5
         p.add_run(f"• Check {component} ({param}):\n").bold = True
         r_act = p.add_run(f"  Actual = {act:.2f} {unit}  <  Allowable = {allw:.2f} {unit}  ")
         res = "SAFE" if act <= allw else "UNSAFE"
@@ -326,9 +327,6 @@ def generate_inclined_report(sys_data):
     doc.save(out)
     return out
 
-# =========================================================
-# 4. Main UI Module for Inclined Systems
-# =========================================================
 def render_inclined_module():
     st.markdown("## 📐 Inclined Formwork System (Advanced 2D Frame)")
     st.info("💡 **Independent Module:** This system solves inclined setups with Roller & Hinged supports, computing Gravity Loads precisely without affecting standard modules.")
