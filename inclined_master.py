@@ -395,7 +395,6 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
             
             v1, theta1 = u_loc[1], u_loc[2]
             v2, theta2 = u_loc[4], u_loc[5]
-            
             w_avg = (py1 + py2) / 2.0 
             
             for i, x in enumerate(xs):
@@ -403,7 +402,6 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
                 V_arr[i] = f_end[1] + (py1*x + (py2-py1)*x**2/(2*L))
                 M_arr[i] = -f_end[2] + f_end[1]*x + py1*x**2/2.0 + (py2-py1)*x**3/(6*L)
                 
-                # 💡 حسابات Local Relative Deflection الدقيقة باستخدام Shape Functions
                 xi = x / L
                 N1 = 1 - 3*xi**2 + 2*xi**3
                 N2 = x * (1 - xi)**2
@@ -412,7 +410,6 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
                 
                 v_shape = v1*N1 + theta1*N2 + v2*N3 + theta2*N4
                 v_load = (w_avg * x**2 * (L - x)**2) / (24 * E * I) 
-                
                 v_tot = v_shape + v_load
                 v_chord = v1 + xi * (v2 - v1) 
                 v_rel_arr[i] = v_tot - v_chord 
@@ -859,7 +856,7 @@ def generate_inclined_report(sys_data):
     add_line("="*50, bold=True)
     
     add_line(f"1. Geometry & Inputs:", bold=True)
-    add_line(f"- Inclined Soldier Length = {sys_data['L_tot']:.2f} m")
+    add_line(f"- Total Inclined Soldier Length = {sys_data['L_tot']:.2f} m")
     add_line(f"- Inclination Angle = {sys_data['angle']:.1f} degrees")
     add_line(f"- Applied Loads = Variable (Refer to Diagram)")
     
@@ -871,7 +868,7 @@ def generate_inclined_report(sys_data):
     inc_db = SECTIONS_DB.get(inc_sec, {'Mall': 13.1, 'Qall': 100.8})
     add_check("Moment", "M_max", sys_data.get('max_M_inc', 0), inc_db.get('Mall', 999), "kN.m")
     add_check("Shear", "V_max", sys_data.get('max_V_inc', 0), inc_db.get('Qall', 999), "kN")
-    add_check("Deflection", "Local Relative (L/400)", sys_data.get('max_def_inc', 0), sys_data.get('allw_def_inc', 10), "mm")
+    add_check("Deflection", "Local Relative", sys_data.get('max_def_inc', 0), sys_data.get('allw_def_inc', 10), "mm")
     
     base_sec = sys_data['base_sec']
     if base_sec != "None (Direct to Ground)":
@@ -879,7 +876,7 @@ def generate_inclined_report(sys_data):
         base_db = SECTIONS_DB.get(base_sec, {'Mall': 13.1, 'Qall': 100.8})
         add_check("Moment", "M_max", sys_data.get('max_M_base', 0), base_db.get('Mall', 999), "kN.m")
         add_check("Shear", "V_max", sys_data.get('max_V_base', 0), base_db.get('Qall', 999), "kN")
-        add_check("Deflection", "Local Relative (L/400)", sys_data.get('max_def_base', 0), sys_data.get('allw_def_base', 10), "mm")
+        add_check("Deflection", "Local Relative", sys_data.get('max_def_base', 0), sys_data.get('allw_def_base', 10), "mm")
     
     add_line("C. Push-Pull Struts (Axial Force)", bold=True)
     for idx, st_val in enumerate(sys_data.get('struts_res', [])):
@@ -933,6 +930,10 @@ def render_inclined_module():
         
     st.markdown("#### ⚙️ 1. Geometry & Profiles")
     
+    c_tot1, c_tot2 = st.columns(2)
+    L_tot_val = c_tot1.number_input("Total Inclined Length (m)", value=5.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    X_tot_val = c_tot2.number_input("Total Base Length (m)", value=3.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    
     c_p1, c_p2 = st.columns(2)
     sec_list = list(SECTIONS_DB.keys()) if SECTIONS_DB else ["Soldier U100"]
     base_sec_list = ["None (Direct to Ground)"] + sec_list
@@ -941,13 +942,10 @@ def render_inclined_module():
     base_sec = c_p2.selectbox("Profile (Base Soldier)", base_sec_list, index=default_idx+1, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     st.markdown("#### 🔗 2. Segments & Connections")
-    # 💡 جمع الخانات الهامة في سطر واحد
     c_g1, c_g2, c_g3, c_g4 = st.columns(4)
     angle_deg = c_g1.number_input("Inclination Angle (°)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
     angle_rad = np.radians(angle_deg)
     num_struts = c_g2.number_input("Push-Pulls Count", min_value=1, max_value=5, value=2, step=1, on_change=lambda: st.session_state.update(inclined_solved=False))
-    L_rem = c_g3.number_input("Top Cantilever (m)", value=1.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
-    X_rem = c_g4.number_input("Right Cantilever (m)", value=0.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     L_segs, X_segs, strut_types = [], [], []
     L_cum, X_cum = 0.0, 0.0
@@ -967,15 +965,13 @@ def render_inclined_module():
         st_type = cl3.selectbox(f"Strut {j+1} (Req: {req_len:.2f}m)", valid_struts, key=f"st_{j}", on_change=lambda: st.session_state.update(inclined_solved=False))
         strut_types.append(st_type)
         
-    L_tot_val = sum(L_segs) + L_rem
-    X_tot_val = sum(X_segs) + X_rem
-    st.info(f"📏 **Calculated Total Lengths:** Inclined = {L_tot_val:.2f} m | Base = {X_tot_val:.2f} m")
+    L_rem = max(0.0, L_tot_val - sum(L_segs))
+    X_rem = max(0.0, X_tot_val - sum(X_segs))
+    st.info(f"📏 **Calculated Cantilevers:** Top Cantilever = {L_rem:.2f} m | Right Cantilever = {X_rem:.2f} m")
     
     st.markdown("#### ⚓ 3. Ground Supports Configuration")
-    
-    # 💡 جمع الخيارات في سطر واحد
     c_s1, c_s2, c_s3, c_s4 = st.columns(4)
-    corner_check_opt = c_s1.selectbox("Corner Securing", ["2 Tie Rods", "Shoring System", "None (On Ground directly)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
+    corner_check_opt = c_s1.selectbox("Corner Securing", ["2 Tie Rods", "Shoring System", "None (On Ground)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
     sys_opts = ["None (On Ground directly)", "Acrow Prop", "Cup-lock", "Ringlock", "Shorebrace Frame"]
     shoring_sys = c_s2.selectbox("Base Shoring", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
     corner_type = c_s3.selectbox("Corner Support Type", ["Hinged", "Roller", "Fixed"], key="corn_type", on_change=lambda: st.session_state.update(inclined_solved=False))
@@ -1024,8 +1020,6 @@ def render_inclined_module():
     c_in, c_plot = st.columns([1.3, 1])
     with c_in:
         st.markdown("#### 🎯 4. Applied Loads")
-        
-        # 💡 تم تدمير فكرة الـ Load Blocks وتوحيد الإدخال في سطر واحد لتوفير المساحة
         c_ld1, c_ld2, c_ld3 = st.columns(3)
         l_type = c_ld1.selectbox("Load Type", ["Uniform", "Trapezoidal/Triangular", "Point Load"], on_change=lambda: st.session_state.update(inclined_solved=False))
         num_items = c_ld2.number_input(f"Count of Loads", 1, 20, 1, on_change=lambda: st.session_state.update(inclined_solved=False))
@@ -1035,7 +1029,7 @@ def render_inclined_module():
         for item in range(int(num_items)):
             if l_type == "Point Load":
                 c1, c2 = st.columns(2)
-                start_l = c1.number_input(f"P{item+1} Distance from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                start_l = c1.number_input(f"P{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 w1 = c2.number_input(f"P{item+1} Value (kN)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l, 'w1': w1, 'w2': w1, 'dir': ldir})
             elif l_type == "Uniform":
