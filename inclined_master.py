@@ -896,25 +896,21 @@ def render_inclined_module():
     if 'inclined_solved' not in st.session_state:
         st.session_state.inclined_solved = False
         
-    c_tot1, c_tot2 = st.columns(2)
-    L_tot_val = c_tot1.number_input("Total Inclined Soldier Length (m)", value=5.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
-    X_tot_val = c_tot2.number_input("Total Base Soldier Length (m)", value=3.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
-        
-    c_top1, c_top2 = st.columns(2)
-    angle_deg = c_top1.number_input("Inclination Angle (Degrees, < 90)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
+    st.markdown("#### ⚙️ 1. Geometry & Profiles")
+    c_g1, c_g2, c_g3, c_g4 = st.columns(4)
+    L_tot_val = c_g1.number_input("Inclined Length (m)", value=5.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    X_tot_val = c_g2.number_input("Base Length (m)", value=3.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    angle_deg = c_g3.number_input("Inclination Angle (°)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
+    num_struts = c_g4.number_input("Push-Pulls Count", min_value=1, max_value=5, value=2, step=1, on_change=lambda: st.session_state.update(inclined_solved=False))
     angle_rad = np.radians(angle_deg)
-    num_struts = c_top2.number_input("Number of Push-Pulls", min_value=1, max_value=5, value=2, step=1, on_change=lambda: st.session_state.update(inclined_solved=False))
-    
-    st.markdown("---")
     
     c_p1, c_p2 = st.columns(2)
     sec_list = list(SECTIONS_DB.keys()) if SECTIONS_DB else ["Soldier U100"]
     default_idx = next((i for i, sec in enumerate(sec_list) if 'Soldier' in sec), 0)
+    inc_sec = c_p1.selectbox("Profile (Inclined Soldier)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
+    base_sec = c_p2.selectbox("Profile (Base Soldier)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
     
-    inc_sec = c_p1.selectbox("Profile (Inclined)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
-    base_sec = c_p2.selectbox("Profile (Base)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
-    
-    st.markdown("#### ⚓ 1. Geometry & Struts Segments")
+    st.markdown("#### 🔗 2. Segments & Connections")
     L_segs, X_segs, strut_types = [], [], []
     L_cum, X_cum = 0.0, 0.0
     
@@ -936,108 +932,82 @@ def render_inclined_module():
     L_rem = max(0.0, L_tot_val - sum(L_segs))
     X_rem = max(0.0, X_tot_val - sum(X_segs))
     
-    st.markdown("#### ⚓ 2. Ground Supports Configuration")
-    st.info("The corner support is at X=0. You can define additional ground supports anywhere on the base.")
-    
-    c_c1, c_c2 = st.columns(2)
-    corner_check_opt = c_c1.selectbox("Corner Support Securing Method", ["2 Tie Rods", "Shoring System", "None (On Ground directly)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
-    
-    corner_tr_cap = 180.0
-    if corner_check_opt == "2 Tie Rods":
-        corner_tr_cap = 180.0
-        c_c2.markdown("<span style='font-size:13px; color:gray; padding-top:8px; display:block;'><b>2 Tie-Rods SWL:</b> 180.0 kN (90 kN each)</span>", unsafe_allow_html=True)
-
-    c_sh1, c_sh2 = st.columns(2)
+    st.markdown("#### ⚓ 3. Ground Supports Configuration")
+    c_s1, c_s2, c_s3, c_s4 = st.columns(4)
+    corner_check_opt = c_s1.selectbox("Corner Securing", ["2 Tie Rods", "Shoring System", "None (On Ground)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
     sys_opts = ["None (On Ground directly)", "Acrow Prop", "Cup-lock", "Ringlock", "Shorebrace Frame"]
-    shoring_sys = c_sh1.selectbox("Underlying Support System", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
+    shoring_sys = c_s2.selectbox("Base Shoring", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
+    corner_type = c_s3.selectbox("Corner Support Type", ["Hinged", "Roller", "Fixed"], key="corn_type", on_change=lambda: st.session_state.update(inclined_solved=False))
+    corner_ang = c_s4.number_input("Corner Angle (°)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False))
+    
+    corner_sup = {'type': corner_type, 'angle': corner_ang}
+    corner_tr_cap = 180.0
     
     allw_sh = 9999.0
     shoring_desc = "On Ground directly"
     
     if shoring_sys == "Acrow Prop":
-        with c_sh2:
-            cp1, cp2 = st.columns(2)
-            prop_keys = list(PROP_DB.keys()) if PROP_DB else ["AEP E-450"]
-            prop_type = cp1.selectbox("Prop Type", prop_keys, key="sh_pt", on_change=lambda: st.session_state.update(inclined_solved=False))
-            prop_ext = cp2.number_input("Extension (m)", value=3.0, step=0.1, key="sh_pe", on_change=lambda: st.session_state.update(inclined_solved=False))
+        cp1, cp2, cp3, cp4 = st.columns(4)
+        prop_keys = list(PROP_DB.keys()) if PROP_DB else ["AEP E-450"]
+        prop_type = cp1.selectbox("Prop Type", prop_keys, key="sh_pt", on_change=lambda: st.session_state.update(inclined_solved=False))
+        prop_ext = cp2.number_input("Extension (m)", value=3.0, step=0.1, key="sh_pe", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Acrow Prop", prop_type, 1.5, prop_ext)
         shoring_desc = f"{shoring_sys} ({prop_type}, Ext: {prop_ext}m)"
     elif shoring_sys == "Cup-lock":
-        with c_sh2:
-            cp1, cp2 = st.columns(2)
-            cu_grade = cp1.selectbox("Grade", list(CUPLOCK_DB.keys()) if CUPLOCK_DB else ["S355 (st.52)"], key="sh_cg", on_change=lambda: st.session_state.update(inclined_solved=False))
-            cu_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_cu", on_change=lambda: st.session_state.update(inclined_solved=False))
+        cp1, cp2, cp3, cp4 = st.columns(4)
+        cu_grade = cp1.selectbox("Grade", list(CUPLOCK_DB.keys()) if CUPLOCK_DB else ["S355 (st.52)"], key="sh_cg", on_change=lambda: st.session_state.update(inclined_solved=False))
+        cu_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_cu", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Cup-lock", cu_grade, cu_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({cu_grade}, Unb: {cu_unb}m)"
     elif shoring_sys == "Ringlock":
-        with c_sh2:
-            cp1, cp2 = st.columns(2)
-            ri_size = cp1.selectbox("Size", list(RINGLOCK_DB.keys()) if RINGLOCK_DB else ["Ringlock 1.5\""], key="sh_rs", on_change=lambda: st.session_state.update(inclined_solved=False))
-            ri_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_ru", on_change=lambda: st.session_state.update(inclined_solved=False))
+        cp1, cp2, cp3, cp4 = st.columns(4)
+        ri_size = cp1.selectbox("Size", list(RINGLOCK_DB.keys()) if RINGLOCK_DB else ["Ringlock 1.5\""], key="sh_rs", on_change=lambda: st.session_state.update(inclined_solved=False))
+        ri_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_ru", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Ringlock", ri_size, ri_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({ri_size}, Unb: {ri_unb}m)"
     elif shoring_sys == "Shorebrace Frame":
         allw_sh = 54.0
         shoring_desc = "Shorebrace Frame"
 
-    c_sup1, c_sup2 = st.columns(2)
-    corner_type = c_sup1.selectbox("Corner Support Physical Type", ["Hinged", "Roller", "Fixed"], key="corn_type", on_change=lambda: st.session_state.update(inclined_solved=False))
-    corner_ang = c_sup2.number_input("Corner Support Angle (0=Horiz)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False))
-    corner_sup = {'type': corner_type, 'angle': corner_ang}
-    
-    num_base_sups = st.number_input("Number of Additional Ground Supports", 0, 10, int(num_struts), on_change=lambda: st.session_state.update(inclined_solved=False))
+    num_base_sups = st.number_input("Additional Base Supports Count", 0, 10, int(num_struts), on_change=lambda: st.session_state.update(inclined_solved=False))
     base_sups = []
-    
     default_xs = [sum(X_segs[:i+1]) for i in range(len(X_segs))]
+    
     for i in range(int(num_base_sups)):
-        cs1, cs2 = st.columns(2)
+        cs1, cs2, cs3 = st.columns(3)
         def_x = default_xs[i] if i < len(default_xs) else float((i+1)*1.5)
-        sx = cs1.number_input(f"Support {i+1} X (m)", value=def_x, step=0.5, key=f"sx_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-        stype = cs2.selectbox(f"Type {i+1}", ["Hinged", "Roller", "Fixed"], key=f"stype_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
+        sx = cs1.number_input(f"Sup {i+1} X (m)", value=def_x, step=0.5, key=f"sx_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
+        stype = cs2.selectbox(f"Sup {i+1} Type", ["Hinged", "Roller", "Fixed"], key=f"stype_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
         base_sups.append({'x': sx, 'type': stype, 'angle': 0.0})
 
     c_in, c_plot = st.columns([1.3, 1])
-    
     with c_in:
-        st.markdown("#### 🎯 3. Applied Loads on Inclined Soldier")
-        num_loads = st.number_input("Number of Load Blocks", 1, 5, 1, on_change=lambda: st.session_state.update(inclined_solved=False))
+        st.markdown("#### 🎯 4. Applied Loads")
+        c_ld1, c_ld2, c_ld3 = st.columns(3)
+        l_type = c_ld1.selectbox("Load Type", ["Uniform", "Trapezoidal/Triangular", "Point Load"], on_change=lambda: st.session_state.update(inclined_solved=False))
+        num_items = c_ld2.number_input(f"Count of Loads", 1, 20, 1, on_change=lambda: st.session_state.update(inclined_solved=False))
+        ldir = c_ld3.selectbox("Direction", ["Gravity (Vertical ↓)", "Perpendicular (Local ↘)"], on_change=lambda: st.session_state.update(inclined_solved=False))
+        
         applied_loads = []
-        for i in range(int(num_loads)):
-            with st.expander(f"Load Block {i+1}", expanded=True):
-                l_type = st.selectbox("Load Type", ["Uniform", "Trapezoidal/Triangular", "Point Load"], key=f"lt_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                
-                if l_type == "Point Load":
-                    c_pt_top1, c_pt_top2 = st.columns(2)
-                    num_pts = c_pt_top1.number_input("Number of Point Loads", 1, 20, 1, key=f"npts_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                    ldir = c_pt_top2.selectbox("Direction", ["Gravity (Vertical ↓)", "Perpendicular (Local ↘)"], key=f"ldir_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                    
-                    st.markdown("<span style='font-size:13px; color:gray;'>Specify distance and value for each point load:</span>", unsafe_allow_html=True)
-                    for pt in range(int(num_pts)):
-                        c_pt1, c_pt2 = st.columns(2)
-                        start_l = c_pt1.number_input(f"Distance {pt+1} from bottom (m)", value=0.0, step=0.5, key=f"ls_{i}_{pt}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                        w1 = c_pt2.number_input(f"Load {pt+1} Value (kN)", value=15.0, step=1.0, key=f"w1_{i}_{pt}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                        applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l, 'w1': w1, 'w2': w1, 'dir': ldir})
-                        
-                else:
-                    c_top1, c_top2 = st.columns(2)
-                    num_items = c_top1.number_input(f"Number of {l_type.split()[0]} Loads", 1, 20, 1, key=f"nitems_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                    ldir = c_top2.selectbox("Direction", ["Gravity (Vertical ↓)", "Perpendicular (Local ↘)"], key=f"ldir_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                    
-                    st.markdown("<span style='font-size:13px; color:gray;'>Specify parameters for each load:</span>", unsafe_allow_html=True)
-                    for item in range(int(num_items)):
-                        if l_type == "Uniform":
-                            cl1, cl2, cw1 = st.columns(3)
-                            start_l = cl1.number_input(f"Start {item+1} (m)", value=0.0, step=0.5, key=f"ls_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            len_l = cl2.number_input(f"Length {item+1} (m)", value=L_tot_val, step=0.5, key=f"ll_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            w1 = cw1.number_input(f"W {item+1} (kN/m)", value=15.0, step=1.0, key=f"w1_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w1, 'dir': ldir})
-                        else:
-                            cl1, cl2, cw1, cw2 = st.columns(4)
-                            start_l = cl1.number_input(f"Start {item+1} (m)", value=0.0, step=0.5, key=f"ls_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            len_l = cl2.number_input(f"Length {item+1} (m)", value=L_tot_val, step=0.5, key=f"ll_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            w1 = cw1.number_input(f"W1 {item+1} (kN/m)", value=15.0, step=1.0, key=f"w1_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            w2 = cw2.number_input(f"W2 {item+1} (kN/m)", value=0.0, step=1.0, key=f"w2_{i}_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                            applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w2, 'dir': ldir})
+        for item in range(int(num_items)):
+            if l_type == "Point Load":
+                c1, c2 = st.columns(2)
+                start_l = c1.number_input(f"P{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                w1 = c2.number_input(f"P{item+1} Value (kN)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l, 'w1': w1, 'w2': w1, 'dir': ldir})
+            elif l_type == "Uniform":
+                c1, c2, c3 = st.columns(3)
+                start_l = c1.number_input(f"L{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                len_l = c2.number_input(f"L{item+1} Length (m)", value=L_tot_val, step=0.5, key=f"ll_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                w1 = c3.number_input(f"L{item+1} W (kN/m)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w1, 'dir': ldir})
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                start_l = c1.number_input(f"L{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                len_l = c2.number_input(f"L{item+1} Length (m)", value=L_tot_val, step=0.5, key=f"ll_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                w1 = c3.number_input(f"L{item+1} W1 (kN/m)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                w2 = c4.number_input(f"L{item+1} W2 (kN/m)", value=0.0, step=1.0, key=f"w2_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w2, 'dir': ldir})
 
     nodes, elements, nodal_loads, L_tot, X_tot, display_nodes, supports_list = build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_sec, base_sec, strut_types, corner_sup, base_sups)
 
@@ -1141,6 +1111,7 @@ def render_inclined_module():
         html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", max_def_base, sd['X_tot'] * 1000 / 200, "mm")
         
         for i, st_res in enumerate(struts_results):
+            # 💡 تصحيح دقيق لمعالجة الخطأ البرمجي في اسم المتغير
             st_data = STRUTS_DB.get(st_res['type'], {})
             allow = st_data.get('allow', st_data.get('pts', {0: 50.0}).get(list(st_data.get('pts', {0:50.0}).keys())[0], 50.0))
             html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], allow, "kN")
@@ -1196,29 +1167,12 @@ def render_inclined_module():
                 st.image(img_bufs[key], use_container_width=True)
                 st.markdown(f"<p style='text-align: center; border-bottom: 1px solid gray; padding-bottom: 5px; font-family: Arial; font-size: 14px;'>{titles[key]}</p>", unsafe_allow_html=True)
         
-        max_M_inc, max_V_inc = 0, 0
-        max_M_base, max_V_base = 0, 0
-        
-        for el in fea_data['elements']:
-            if el['type'] == 'frame':
-                max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
-                if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
-                max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
-                if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
-                
-                if el['group'] == 'inclined':
-                    max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
-                elif el['group'] == 'base':
-                    max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
-        
         struts_results = []
         for el in fea_data['elements']:
             if el['type'] == 'truss':
                 struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
             
         fea_data['sys_data'].update({
-            'max_M_inc': max_M_inc, 'max_V_inc': max_V_inc,
-            'max_M_base': max_M_base, 'max_V_base': max_V_base,
             'struts_res': struts_results,
             'img_bufs': img_bufs
         })
