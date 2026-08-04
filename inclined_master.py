@@ -22,9 +22,25 @@ except ImportError:
     SECTIONS_DB = {}
     STRUTS_DB = {}
 
+try:
+    from math_solver import get_prop_allowable, get_scaffold_allowable
+except ImportError:
+    def get_prop_allowable(*args): return 20.0
+    def get_scaffold_allowable(*args): return 40.0
+
 # =========================================================
 # 0. Helper Functions & Styles
 # =========================================================
+def get_shoring_capacity(t_nm, subtype, unb, req_ext):
+    try:
+        if t_nm == "Shorebrace Frame": return 54.00
+        elif t_nm == "Cuplock": return get_scaffold_allowable("Cuplock", subtype, unb)
+        elif t_nm == "Ringlock": return get_scaffold_allowable("Ringlock", subtype, unb)
+        elif t_nm == "Acrow Prop": return get_prop_allowable(subtype, req_ext, True)
+    except:
+        pass
+    return 20.0 
+
 def get_valid_struts(req_len, struts_db):
     valid = []
     for name, props in struts_db.items():
@@ -341,10 +357,11 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
             [0, 0, 0, c, s, 0], [0, 0, 0, -s, c, 0], [0, 0, 0, 0, 0, 1]
         ])
         u_loc = T @ u_glob
+        el['internal'] = {'u_loc': u_loc} # حفظ الـ Displacements للترخيم
         
         if el['type'] == 'truss':
             N_val = (E * A / L) * (u_loc[3] - u_loc[0])
-            el['internal'] = {'N': [N_val, N_val], 'V': [0,0], 'M': [0,0], 'x': [0, L]}
+            el['internal'].update({'N': [N_val, N_val], 'V': [0,0], 'M': [0,0], 'x': [0, L]})
         else:
             I_raw = el['I']; I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 
             k_loc = np.array([
@@ -376,7 +393,7 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
                 V_arr[i] = f_end[1] + (py1*x + (py2-py1)*x**2/(2*L))
                 M_arr[i] = -f_end[2] + f_end[1]*x + py1*x**2/2.0 + (py2-py1)*x**3/(6*L)
                 
-            el['internal'] = {'N': N_arr, 'V': V_arr, 'M': M_arr, 'x': xs}
+            el['internal'].update({'N': N_arr, 'V': V_arr, 'M': M_arr, 'x': xs})
             
     return U, R_reactions
 
@@ -817,11 +834,13 @@ def generate_inclined_report(sys_data):
     add_line(f"A. Inclined Soldier ({inc_sec})", bold=True)
     add_check("Moment", "M_max", sys_data['max_M_inc'], SECTIONS_DB.get(inc_sec, {}).get('Mall', 999), "kN.m")
     add_check("Shear", "V_max", sys_data['max_V_inc'], SECTIONS_DB.get(inc_sec, {}).get('Qall', 999), "kN")
+    add_check("Deflection", "Local Normal", sys_data['max_def_inc'], sys_data['L_tot'] * 1000 / 200, "mm")
     
     base_sec = sys_data['base_sec']
     add_line(f"B. Horizontal Base Soldier ({base_sec})", bold=True)
     add_check("Moment", "M_max", sys_data['max_M_base'], SECTIONS_DB.get(base_sec, {}).get('Mall', 999), "kN.m")
     add_check("Shear", "V_max", sys_data['max_V_base'], SECTIONS_DB.get(base_sec, {}).get('Qall', 999), "kN")
+    add_check("Deflection", "Local Normal", sys_data['max_def_base'], sys_data['X_tot'] * 1000 / 200, "mm")
     
     add_line("C. Push-Pull Struts (Axial Force)", bold=True)
     for idx, st_val in enumerate(sys_data['struts_res']):
@@ -922,9 +941,34 @@ def render_inclined_module():
     
     c_tie1, c_tie2 = st.columns(2)
     corner_tr_cap = c_tie1.number_input("Corner 2 Tie-Rods SWL (kN)", value=180.0, step=10.0, help="Capacity of 2 Tie Rods (Assume 90 kN each)", on_change=lambda: st.session_state.update(inclined_solved=False))
-    shoring_type = c_tie2.selectbox("Underlying Support System (For Vertical Reactions)", 
-                                    ["None (On Ground directly)", "Shorebrace Frame (54 kN/leg)", "Cuplock (40 kN/leg)", "Ringlock (40 kN/leg)", "Acrow Prop (20 kN/prop)"], 
-                                    on_change=lambda: st.session_state.update(inclined_solved=False))
+    
+    sys_opts = ["None (On Ground directly)", "Acrow Prop", "Cuplock", "Ringlock", "Shorebrace Frame"]
+    shoring_sys = c_tie2.selectbox("Underlying Support System", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
+    
+    allw_sh = 9999.0
+    shoring_desc = "On Ground directly"
+    
+    if shoring_sys == "Acrow Prop":
+        c_sh1, c_sh2 = st.columns(2)
+        prop_type = c_sh1.selectbox("Prop Type", ["Prop No.2", "Prop No.3", "Prop No.4", "Prop No.5"], key="sh_pt")
+        prop_ext = c_sh2.number_input("Extension (m)", value=3.0, step=0.1, key="sh_pe")
+        allw_sh = get_shoring_capacity("Acrow Prop", prop_type, 1.5, prop_ext)
+        shoring_desc = f"{shoring_sys} ({prop_type}, Ext: {prop_ext}m)"
+    elif shoring_sys == "Cuplock":
+        c_sh1, c_sh2 = st.columns(2)
+        cu_grade = c_sh1.selectbox("Grade", ["S355 (st.52)", "S235"], key="sh_cg")
+        cu_unb = c_sh2.number_input("Unbraced Length (m)", value=1.5, step=0.1, key="sh_cu")
+        allw_sh = get_shoring_capacity("Cuplock", cu_grade, cu_unb, 3.0)
+        shoring_desc = f"{shoring_sys} ({cu_grade}, Unb: {cu_unb}m)"
+    elif shoring_sys == "Ringlock":
+        c_sh1, c_sh2 = st.columns(2)
+        ri_size = c_sh1.selectbox("Size", ["Ringlock 1.5\"", "Ringlock 2.0\""], key="sh_rs")
+        ri_unb = c_sh2.number_input("Unbraced Length (m)", value=1.5, step=0.1, key="sh_ru")
+        allw_sh = get_shoring_capacity("Ringlock", ri_size, ri_unb, 3.0)
+        shoring_desc = f"{shoring_sys} ({ri_size}, Unb: {ri_unb}m)"
+    elif shoring_sys == "Shorebrace Frame":
+        allw_sh = 54.0
+        shoring_desc = "Shorebrace Frame"
     
     num_base_sups = st.number_input("Number of Additional Ground Supports", 0, 10, int(num_struts), on_change=lambda: st.session_state.update(inclined_solved=False))
     base_sups = []
@@ -998,7 +1042,8 @@ def render_inclined_module():
                     'U': U, 'R': R, 'nodes': nodes, 'elements': elements, 'display_nodes': display_nodes, 'supports_list': supports_list,
                     'sys_data': {
                         'L_tot': L_tot, 'X_tot': X_tot, 'angle': angle_deg, 'W': "Variable", 'ld_dir': "Variable",
-                        'inc_sec': inc_sec, 'base_sec': base_sec, 'corner_tr_cap': corner_tr_cap, 'shoring_type': shoring_type
+                        'inc_sec': inc_sec, 'base_sec': base_sec, 'corner_tr_cap': corner_tr_cap, 
+                        'shoring_type': shoring_desc, 'allw_sh': allw_sh
                     }
                 }
                 st.session_state.inclined_solved = True
@@ -1016,6 +1061,7 @@ def render_inclined_module():
         sd = fea_data['sys_data']
         
         max_M_inc, max_V_inc, max_M_base, max_V_base = 0, 0, 0, 0
+        max_def_inc, max_def_base = 0.0, 0.0
         struts_results = []
         
         for el in fea_data['elements']:
@@ -1024,24 +1070,56 @@ def render_inclined_module():
                 if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
                 max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
                 if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
-                if el['group'] == 'inclined': max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
-                elif el['group'] == 'base': max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
+                
+                v_def_start = abs(el['internal']['u_loc'][1]) * 1000
+                v_def_end = abs(el['internal']['u_loc'][4]) * 1000
+                max_def_el = max(v_def_start, v_def_end)
+                
+                if el['group'] == 'inclined': 
+                    max_M_inc = max(max_M_inc, max_M)
+                    max_V_inc = max(max_V_inc, max_V)
+                    max_def_inc = max(max_def_inc, max_def_el)
+                elif el['group'] == 'base': 
+                    max_M_base = max(max_M_base, max_M)
+                    max_V_base = max(max_V_base, max_V)
+                    max_def_base = max(max_def_base, max_def_el)
             elif el['type'] == 'truss':
                 struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
         
-        html = "<table style='width:100%; text-align:center; border-collapse: collapse; margin-bottom: 20px; font-family: Arial;'>"
-        html += "<tr style='background-color:#f0f2f6; border-bottom: 2px solid #ddd;'><th>Component</th><th>Description</th><th>Actual (Applied)</th><th>Allowable (Capacity)</th><th>Status</th></tr>"
+        sd['max_def_inc'] = max_def_inc
+        sd['max_def_base'] = max_def_base
+        
+        html = """
+        <style>
+        .safety-table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; font-family: 'Arial', sans-serif; box-shadow: 0 0 15px rgba(0, 0, 0, 0.05); border-radius: 8px 8px 0 0; overflow: hidden; }
+        .safety-table thead tr { background-color: #2c3e50; color: #ffffff; text-align: center; font-weight: bold; }
+        .safety-table th, .safety-table td { padding: 12px 15px; text-align: center; border-bottom: 1px solid #dddddd; }
+        .safety-table tbody tr:hover { background-color: #f5f5f5; }
+        .badge-safe { background-color: #d4edda; color: #155724; padding: 4px 10px; border-radius: 12px; font-weight: bold; border: 1px solid #c3e6cb; }
+        .badge-unsafe { background-color: #f8d7da; color: #721c24; padding: 4px 10px; border-radius: 12px; font-weight: bold; border: 1px solid #f5c6cb; }
+        </style>
+        <table class="safety-table">
+        <thead><tr><th>Component</th><th>Description</th><th>Actual (Applied)</th><th>Allowable (Capacity)</th><th>Status</th></tr></thead>
+        <tbody>
+        """
         
         def add_row(comp, desc, act, allw, unit):
-            color = "green" if act <= allw else "red"
-            status = "✅ SAFE" if act <= allw else "❌ UNSAFE"
-            allw_str = "No Limit" if allw > 9000 else f"{allw:.2f} {unit}"
-            return f"<tr style='border-bottom: 1px solid #eee;'><td><b>{comp}</b></td><td>{desc}</td><td>{act:.2f} {unit}</td><td>{allw_str}</td><td style='color:{color}; font-weight:bold;'>{status}</td></tr>"
+            if allw > 9000: 
+                status_html = "<span style='color:gray;'>Not Required</span>"
+                allw_str = "No Limit"
+            else:
+                is_safe = act <= allw
+                status_html = "<span class='badge-safe'>✅ SAFE</span>" if is_safe else "<span class='badge-unsafe'>❌ UNSAFE</span>"
+                allw_str = f"{allw:.2f} {unit}"
+            return f"<tr><td><b>{comp}</b></td><td>{desc}</td><td>{act:.2f} {unit}</td><td>{allw_str}</td><td>{status_html}</td></tr>"
 
         html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", max_M_inc, SECTIONS_DB.get(sd['inc_sec'], {}).get('Mall', 999), "kN.m")
         html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", max_V_inc, SECTIONS_DB.get(sd['inc_sec'], {}).get('Qall', 999), "kN")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Deflection", max_def_inc, sd['L_tot'] * 1000 / 200, "mm")
+        
         html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", max_M_base, SECTIONS_DB.get(sd['base_sec'], {}).get('Mall', 999), "kN.m")
         html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", max_V_base, SECTIONS_DB.get(sd['base_sec'], {}).get('Qall', 999), "kN")
+        html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", max_def_base, sd['X_tot'] * 1000 / 200, "mm")
         
         for i, st_res in enumerate(struts_results):
             html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], STRUTS_DB.get(st_res['type'], {}).get('allow', 999), "kN")
@@ -1054,14 +1132,9 @@ def render_inclined_module():
                 html += add_row("Corner Support", "2 x Tie Rods (Axial Force)", R_res, sd['corner_tr_cap'], "kN")
             else:
                 Ry_abs = abs(R[3*n+1])
-                allw_sh = 9999.0
-                if "Shorebrace" in sd['shoring_type']: allw_sh = 54.0
-                elif "Cuplock" in sd['shoring_type']: allw_sh = 40.0
-                elif "Ringlock" in sd['shoring_type']: allw_sh = 40.0
-                elif "Acrow Prop" in sd['shoring_type']: allw_sh = 20.0
-                html += add_row(f"Base Support {i}", sd['shoring_type'], Ry_abs, allw_sh, "kN")
+                html += add_row(f"Base Support {i}", sd['shoring_type'], Ry_abs, sd['allw_sh'], "kN")
 
-        html += "</table>"
+        html += "</tbody></table>"
         st.markdown("### 📊 System Components Safety Summary")
         st.markdown(html, unsafe_allow_html=True)
     
