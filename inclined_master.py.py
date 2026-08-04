@@ -6,11 +6,9 @@ import pandas as pd
 import io
 import os
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 try:
     from config import SECTIONS_DB, STRUTS_DB
@@ -36,7 +34,13 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
         c, s = (x2 - x1) / L, (y2 - y1) / L
         el['L'], el['c'], el['s'] = L, c, s
         
-        E, A, I = el['E'], el['A'], el.get('I', 1e-6)
+        # 💡 توحيد ذكي للوحدات لضمان الدقة بغض النظر عن الداتابيز
+        E_raw = el.get('E', 210000000.0)
+        E = E_raw if E_raw > 1000000 else E_raw * 10000.0 # Convert kN/cm2 to kN/m2
+        A_raw = el.get('A', 0.00343)
+        A = A_raw if A_raw < 0.1 else A_raw / 10000.0 # Convert cm2 to m2
+        I_raw = el.get('I', 0.00000122)
+        I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 # Convert cm4 to m4
         
         T = np.array([
             [c, s, 0, 0, 0, 0], [-s, c, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0],
@@ -114,7 +118,13 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
     for el in elements:
         n1, n2 = el['n1'], el['n2']
         c, s, L = el['c'], el['s'], el['L']
-        E, A, I = el['E'], el['A'], el.get('I', 1e-6)
+        
+        E_raw = el.get('E', 210000000.0)
+        E = E_raw if E_raw > 1000000 else E_raw * 10000.0 
+        A_raw = el.get('A', 0.00343)
+        A = A_raw if A_raw < 0.1 else A_raw / 10000.0 
+        I_raw = el.get('I', 0.00000122)
+        I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 
         
         dof_idx = [3*n1, 3*n1+1, 3*n1+2, 3*n2, 3*n2+1, 3*n2+2]
         u_glob = U[dof_idx]
