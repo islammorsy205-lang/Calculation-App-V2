@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-# 💡 المكتبات دي ضرورية جداً للتحكم في اتجاه الوورد (إلغاء العربي وإجبار اليسار)
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
@@ -90,7 +89,6 @@ def generate_backprop_report(configs, ref_code):
     else:
         doc = Document()
 
-    # 💡 الدالة المسؤولة عن التدخل في XML الوورد لكسر خصائص العربي وإجبار النص لليسار تماماً
     def force_ltr_left(p):
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         pPr = p._element.get_or_add_pPr()
@@ -100,7 +98,7 @@ def generate_backprop_report(configs, ref_code):
         
     def add_p(text, bold=False, underline=False, color=None, size=12, indent=0):
         p = doc.add_paragraph()
-        force_ltr_left(p)  # إجبار الاتجاه هنا
+        force_ltr_left(p)  
         
         p.paragraph_format.line_spacing = 1.5
         if indent > 0:
@@ -111,7 +109,7 @@ def generate_backprop_report(configs, ref_code):
         r.font.size = Pt(size)
         r.font.bold = bold
         r.font.underline = underline
-        r.font.rtl = False  # إجبار الحروف على عدم اتباع النظام العربي
+        r.font.rtl = False  
         if color:
             r.font.color.rgb = color
         return p
@@ -152,7 +150,6 @@ def generate_backprop_report(configs, ref_code):
         calc_str = f"               = {conf['gamma_c']:.1f}X{conf['ts_fresh']:.2f} + {conf['LL']:.2f} + {conf['FW']:.2f} = {conf['W_fresh']:.2f} KN/m²"
         add_p(calc_str, bold=True, indent=1)
 
-        # ---------------- Iterate Existing Slabs ----------------
         current_transferred = conf['W_fresh']
         
         for i, slab in enumerate(conf['existing_slabs']):
@@ -183,7 +180,7 @@ def generate_backprop_report(configs, ref_code):
                 check_txt_i = f"Area Load on one leg of {grid_i['sys']} = {grid_i['area']:.2f} x {next_transferred:.2f} = {load_leg_i:.2f} KN < {grid_i['cap']:.2f} KN"
                 
                 p_check_i = doc.add_paragraph()
-                force_ltr_left(p_check_i) # إجبار الاتجاه
+                force_ltr_left(p_check_i) 
                 p_check_i.paragraph_format.line_spacing = 1.5
                 p_check_i.paragraph_format.left_indent = Cm(1)
                 
@@ -214,7 +211,7 @@ def generate_backprop_report(configs, ref_code):
 
         add_p("Load Path Diagram:", bold=True)
         p_img = doc.add_paragraph()
-        force_ltr_left(p_img) # إجبار الاتجاه لليسار لضمان أن الصورة لن تذهب لليمين
+        force_ltr_left(p_img)
         p_img.add_run().add_picture(io.BytesIO(conf['img_buf'].read()), width=Cm(12.0))
             
     out = io.BytesIO()
@@ -248,12 +245,19 @@ def render_backprop_module(ref_code):
             num_exist = st.number_input("Number of Existing Slabs Below", 1, 5, 2, key=f'nx_{idx}')
             existing_slabs = []
             
+            # 💡 متغير لحساب الحمل المتبقي وعرضه مباشرة في واجهة البرنامج (Live UI Update)
+            current_ui_transferred = W_fresh
+            
             for j in range(int(num_exist)):
                 st.markdown(f"#### Existing Slab {j+1}")
                 ec1, ec2, ec3 = st.columns(3)
                 ll_des = ec1.number_input("Design L.L (kN/m²)", value=2.50, step=0.5, key=f'll_{idx}_{j}')
                 sidl_des = ec2.number_input("Design SIDL (kN/m²)", value=0.50, step=0.5, key=f'sidl_{idx}_{j}')
                 strength = ec3.number_input("Strength Achieved (%)", value=80.0, step=5.0, key=f'str_{idx}_{j}')
+                
+                # حساب قدرة البلاطة على الاحتمال
+                slab_capacity = (sidl_des + ll_des) * (strength / 100.0)
+                next_ui_transferred = max(0, current_ui_transferred - slab_capacity)
                 
                 st.markdown(f"**Level {j+1} Back-propping Shoring (Props Under Existing Slab {j+1})**")
                 ssc1, ssc2, ssc3 = st.columns(3)
@@ -277,6 +281,20 @@ def render_backprop_module(ref_code):
                 
                 cap_j = get_shoring_capacity(sys_j, subtype_j, unb_j, ext_j)
                 level_j_shore = {'sys': sys_j, 'gx': gx_j, 'gy': gy_j, 'area': gx_j*gy_j, 'cap': cap_j}
+                
+                # =========================================================================
+                # 💡 التعديل المطلوب: الشيك اللحظي (Live Check) في واجهة البرنامج مباشرة
+                # =========================================================================
+                if next_ui_transferred > 0:
+                    actual_leg_load = (gx_j * gy_j) * next_ui_transferred
+                    if actual_leg_load <= cap_j:
+                        st.success(f"✅ **SAFE** | Load Transferred: **{next_ui_transferred:.2f} kN/m²** | Actual Leg Load: **{actual_leg_load:.2f} kN** < Leg Capacity: **{cap_j:.2f} kN**")
+                    else:
+                        st.error(f"❌ **UNSAFE** | Load Transferred: **{next_ui_transferred:.2f} kN/m²** | Actual Leg Load: **{actual_leg_load:.2f} kN** > Leg Capacity: **{cap_j:.2f} kN**")
+                else:
+                    st.success(f"✅ **NO SHORING REQUIRED** | Slab fully absorbed the load. (Transferred: 0.00 kN/m²)")
+                
+                current_ui_transferred = next_ui_transferred
                 
                 existing_slabs.append({
                     'll': ll_des, 'sidl': sidl_des, 'strength': strength, 'shore': level_j_shore
