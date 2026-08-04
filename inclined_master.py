@@ -936,10 +936,10 @@ def render_inclined_module():
     
     c_p1, c_p2 = st.columns(2)
     sec_list = list(SECTIONS_DB.keys()) if SECTIONS_DB else ["Soldier U100"]
-    base_sec_list = ["None (Direct to Ground)"] + sec_list
+    base_sec_list = ["Soldier U100", "None (Direct to Ground)"]
     default_idx = next((i for i, sec in enumerate(sec_list) if 'Soldier' in sec), 0)
     inc_sec = c_p1.selectbox("Profile (Inclined Soldier)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
-    base_sec = c_p2.selectbox("Profile (Base Soldier)", base_sec_list, index=default_idx+1, on_change=lambda: st.session_state.update(inclined_solved=False))
+    base_sec = c_p2.selectbox("Profile (Base Soldier)", base_sec_list, index=0, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     st.markdown("#### 🔗 2. Segments & Connections")
     c_g1, c_g2, c_g3, c_g4 = st.columns(4)
@@ -1145,14 +1145,14 @@ def render_inclined_module():
         inc_db = SECTIONS_DB.get(sd['inc_sec'], {'Mall': 13.1, 'Qall': 100.8})
         base_db = SECTIONS_DB.get(sd['base_sec'], {'Mall': 13.1, 'Qall': 100.8})
 
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", sd['max_M_inc'], inc_db.get('Mall', 999), "kN.m")
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", sd['max_V_inc'], inc_db.get('Qall', 999), "kN")
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Deflection", sd['max_def_inc'], sd['allw_def_inc'], "mm")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", sd.get('max_M_inc', 0), inc_db.get('Mall', 999), "kN.m")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", sd.get('max_V_inc', 0), inc_db.get('Qall', 999), "kN")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Deflection", sd.get('max_def_inc', 0), sd.get('allw_def_inc', 10), "mm")
         
         if sd['base_sec'] != "None (Direct to Ground)":
-            html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", sd['max_M_base'], base_db.get('Mall', 999), "kN.m")
-            html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", sd['max_V_base'], base_db.get('Qall', 999), "kN")
-            html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", sd['max_def_base'], sd['allw_def_base'], "mm")
+            html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", sd.get('max_M_base', 0), base_db.get('Mall', 999), "kN.m")
+            html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", sd.get('max_V_base', 0), base_db.get('Qall', 999), "kN")
+            html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", sd.get('max_def_base', 0), sd.get('allw_def_base', 10), "mm")
         
         for i, st_res in enumerate(struts_results):
             st_data = STRUTS_DB.get(st_res['type'], {})
