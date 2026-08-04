@@ -374,7 +374,7 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
                 [0, 6*E*I/L**2, 4*E*I/L, 0, -6*E*I/L**2, 2*E*I/L],
                 [-E*A/L, 0, 0, E*A/L, 0, 0],
                 [0, -12*E*I/L**3, -6*E*I/L**2, 0, 12*E*I/L**3, -6*E*I/L**2],
-                [0, 6*E*I/L**2, 2*E*I/L, 0, -6*E*I/L**2, 4*E*I/L]
+                [0, 6*E*I/L**2, 2*E*I/L, 0, -6*E*I/el['L']**2, 4*E*I/el['L']]
             ])
             px1, py1, px2, py2 = el['px1'], el['py1'], el['px2'], el['py2']
             f_eq_loc = np.array([
@@ -448,15 +448,16 @@ def draw_base_geometry(ax, nodes, elements, supports_list):
         nx, ny = np.sin(rad), -np.cos(rad) 
         tx, ty = -ny, nx 
         
+        # 💡 تم تفرغ الركائز وجعلها بلون أخضر فاتح SAP2000-Style
         if t == 'Fixed':
-            ax.plot(x, y, marker='s', color='limegreen', markersize=6, zorder=5)
+            ax.plot(x, y, marker='s', markerfacecolor='none', markeredgecolor='limegreen', markersize=6, zorder=5)
             ax.plot([x - 0.2*tx, x + 0.2*tx], [y - 0.2*ty, y + 0.2*ty], color='limegreen', lw=2, zorder=4)
         elif t == 'Hinged':
             h, w = 0.3, 0.2
             p1 = (x, y)
             p2 = (x + h*nx + w*tx, y + h*ny + w*ty)
             p3 = (x + h*nx - w*tx, y + h*ny - w*ty)
-            poly = Polygon([p1, p2, p3], facecolor='limegreen', edgecolor='black', lw=0.5, zorder=5)
+            poly = Polygon([p1, p2, p3], facecolor='none', edgecolor='limegreen', lw=1.2, zorder=5)
             ax.add_patch(poly)
             ax.plot([p2[0]+0.1*tx, p3[0]-0.1*tx], [p2[1]+0.1*ty, p3[1]-0.1*ty], color='limegreen', lw=1.5, zorder=4)
         elif t == 'Roller':
@@ -464,15 +465,16 @@ def draw_base_geometry(ax, nodes, elements, supports_list):
             p1 = (x, y)
             p2 = (x + h*nx + w*tx, y + h*ny + w*ty)
             p3 = (x + h*nx - w*tx, y + h*ny - w*ty)
-            poly = Polygon([p1, p2, p3], facecolor='limegreen', edgecolor='black', lw=0.5, zorder=5)
+            poly = Polygon([p1, p2, p3], facecolor='none', edgecolor='limegreen', lw=1.2, zorder=5)
             ax.add_patch(poly)
             
             circ_x, circ_y = x + (h + r)*nx, y + (h + r)*ny
-            circle = plt.Circle((circ_x, circ_y), r, facecolor='none', edgecolor='limegreen', lw=1.0, zorder=5)
+            circle = plt.Circle((circ_x, circ_y), r, facecolor='none', edgecolor='limegreen', lw=1.2, zorder=5)
             ax.add_patch(circle)
             
-            base_dist = h + 2*r  # Adjusted to touch circle
-            line_w = 0.12        # Reduced length
+            # 💡 تصغير الخط ولصقه تماماً في الدائرة للـ Roller
+            base_dist = h + 2*r
+            line_w = 0.12
             lx1, ly1 = x + base_dist*nx - line_w*tx, y + base_dist*ny - line_w*ty
             lx2, ly2 = x + base_dist*nx + line_w*tx, y + base_dist*ny + line_w*ty
             ax.plot([lx1, lx2], [ly1, ly2], color='limegreen', lw=1.5, zorder=4)
@@ -1007,13 +1009,21 @@ def render_inclined_module():
     elif shoring_sys == "Cup-lock":
         cp1, cp2, cp3, cp4 = st.columns(4)
         cu_grade = cp1.selectbox("Grade", list(CUPLOCK_DB.keys()) if CUPLOCK_DB else ["S355 (st.52)"], key="sh_cg", on_change=lambda: st.session_state.update(inclined_solved=False))
-        cu_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_cu", on_change=lambda: st.session_state.update(inclined_solved=False))
+        
+        cu_opts = list(CUPLOCK_DB[cu_grade].keys()) if CUPLOCK_DB and cu_grade in CUPLOCK_DB else [1.0, 1.5, 2.0]
+        def_idx = cu_opts.index(1.5) if 1.5 in cu_opts else 0
+        cu_unb = cp2.selectbox("Unbraced (m)", cu_opts, index=def_idx, key="sh_cu", format_func=lambda x: f"{float(x):.2f}", on_change=lambda: st.session_state.update(inclined_solved=False))
+        
         allw_sh = get_shoring_capacity("Cup-lock", cu_grade, cu_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({cu_grade}, Unb: {cu_unb}m)"
     elif shoring_sys == "Ringlock":
         cp1, cp2, cp3, cp4 = st.columns(4)
         ri_size = cp1.selectbox("Size", list(RINGLOCK_DB.keys()) if RINGLOCK_DB else ["Ringlock 1.5\""], key="sh_rs", on_change=lambda: st.session_state.update(inclined_solved=False))
-        ri_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_ru", on_change=lambda: st.session_state.update(inclined_solved=False))
+        
+        ri_opts = list(RINGLOCK_DB[ri_size].keys()) if RINGLOCK_DB and ri_size in RINGLOCK_DB else [1.0, 1.5, 2.0]
+        def_idx = ri_opts.index(1.5) if 1.5 in ri_opts else 0
+        ri_unb = cp2.selectbox("Unbraced (m)", ri_opts, index=def_idx, key="sh_ru", format_func=lambda x: f"{float(x):.2f}", on_change=lambda: st.session_state.update(inclined_solved=False))
+        
         allw_sh = get_shoring_capacity("Ringlock", ri_size, ri_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({ri_size}, Unb: {ri_unb}m)"
     elif shoring_sys == "Shorebrace Frame":
