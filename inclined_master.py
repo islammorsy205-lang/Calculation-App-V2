@@ -15,19 +15,20 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-# 💡 استدعاء قواعد بيانات القطاعات
+# 💡 استدعاء قواعد بيانات القطاعات والشدات الموحدة من الملفات المرفقة
 try:
-    from config import SECTIONS_DB, STRUTS_DB
+    from config import SECTIONS_DB, STRUTS_DB, PROP_DB, CUPLOCK_DB, RINGLOCK_DB
 except ImportError:
     st.error("⚠️ برجاء التأكد من وجود ملف config.py")
     SECTIONS_DB = {}
     STRUTS_DB = {}
+    PROP_DB = {}
+    CUPLOCK_DB = {}
+    RINGLOCK_DB = {}
 
-# 💡 استدعاء معادلات سعة الشدات المعدنية من ملف math_solver
 try:
     from math_solver import get_prop_allowable, get_scaffold_allowable
 except ImportError:
-    # قيم افتراضية في حالة عدم العثور على الملف
     def get_prop_allowable(*args): return 20.0
     def get_scaffold_allowable(*args): return 40.0
 
@@ -37,7 +38,7 @@ except ImportError:
 def get_shoring_capacity(t_nm, subtype, unb, req_ext):
     try:
         if t_nm == "Shorebrace Frame": return 54.00
-        elif t_nm == "Cuplock": return get_scaffold_allowable("Cuplock", subtype, unb)
+        elif t_nm == "Cuplock": return get_scaffold_allowable("Cup-lock", subtype, unb)
         elif t_nm == "Ringlock": return get_scaffold_allowable("Ringlock", subtype, unb)
         elif t_nm == "Acrow Prop": return get_prop_allowable(subtype, req_ext, True)
     except:
@@ -171,7 +172,7 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
     elements = []
     nodal_loads = []
     E_st = 210000000.0 
-    inc_props = SECTIONS_DB.get(inc_sec, {'E': E_st, 'A': 0.00343, 'I': 0.00000122})
+    inc_props = SECTIONS_DB.get(inc_sec, {'E': 2100.0, 'I': 412.0, 'Mall': 13.1, 'Qall': 100.8})
     
     for i in range(len(inc_node_indices)-1):
         n1 = inc_node_indices[i]
@@ -198,7 +199,7 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
         elements.append({
             'type': 'frame', 'group': 'inclined', 'sec': inc_sec,
             'n1': n1, 'n2': n2, 'px1': p_x1, 'py1': p_y1, 'px2': p_x2, 'py2': p_y2,
-            'E': inc_props.get('E', E_st), 'A': inc_props.get('A', 0.00343), 'I': inc_props.get('I', 0.00000122)
+            'E': inc_props.get('E', 2100.0) * 10000.0, 'A': 0.00343, 'I': inc_props.get('I', 412.0) / 100000000.0
         })
         
     for ld in applied_loads:
@@ -213,13 +214,13 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
                     nodal_loads.append({'node': n_idx, 'Fx': ld['w1']*s, 'Fy': -ld['w1']*c})
             except ValueError: pass
                 
-    base_props = SECTIONS_DB.get(base_sec, {'E': E_st, 'A': 0.00343, 'I': 0.00000122})
+    base_props = SECTIONS_DB.get(base_sec, {'E': 2100.0, 'I': 412.0, 'Mall': 13.1, 'Qall': 100.8})
     for i in range(len(base_node_indices)-1):
         elements.append({
             'type': 'frame', 'group': 'base', 'sec': base_sec,
             'n1': base_node_indices[i], 'n2': base_node_indices[i+1],
             'px1': 0.0, 'py1': 0.0, 'px2': 0.0, 'py2': 0.0,
-            'E': base_props.get('E', E_st), 'A': base_props.get('A', 0.00343), 'I': base_props.get('I', 0.00000122)
+            'E': base_props.get('E', 2100.0) * 10000.0, 'A': 0.00343, 'I': base_props.get('I', 412.0) / 100000000.0
         })
         
     X_cum_strut = 0.0
@@ -234,11 +235,11 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
             n_base = base_node_indices[idx_base]
             display_nodes.add(n_base)
             
-            st_props = STRUTS_DB.get(strut_types[j], {'A': 0.001}) 
+            st_props = STRUTS_DB.get(strut_types[j], {'allow': 50.0}) 
             elements.append({
                 'type': 'truss', 'group': 'strut', 'sec': strut_types[j],
                 'n1': n_base, 'n2': n_inc,
-                'E': E_st, 'A': st_props.get('A', 0.001)
+                'E': 21000000.0, 'A': 0.001
             })
             
     X_tot = base_x_pts[-1]
@@ -262,8 +263,7 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
         c, s = (x2 - x1) / L, (y2 - y1) / L
         el['L'], el['c'], el['s'] = L, c, s
         
-        E_raw = el['E']; E = E_raw if E_raw > 1000000 else E_raw * 10000.0 
-        A_raw = el['A']; A = A_raw if A_raw < 0.1 else A_raw / 10000.0 
+        E, A, I = el['E'], el['A'], el.get('I', 0.00005)
         
         T = np.array([
             [c, s, 0, 0, 0, 0], [-s, c, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0],
@@ -272,10 +272,11 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
         
         if el['type'] == 'truss':
             k_loc = np.zeros((6, 6))
-            k_loc[0, 0] = k_loc[3, 3] = E * A / L
-            k_loc[0, 3] = k_loc[3, 0] = -E * A / L
+            k_loc[0, 0] = E * A / L
+            k_loc[3, 3] = E * A / L
+            k_loc[0, 3] = -E * A / L
+            k_loc[3, 0] = -E * A / L
         else:
-            I_raw = el['I']; I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 
             k_loc = np.array([
                 [E*A/L, 0, 0, -E*A/L, 0, 0],
                 [0, 12*E*I/L**3, 6*E*I/L**2, 0, -12*E*I/L**3, 6*E*I/L**2],
@@ -350,8 +351,7 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
     for el in elements:
         n1, n2 = el['n1'], el['n2']
         c, s, L = el['c'], el['s'], el['L']
-        E_raw = el['E']; E = E_raw if E_raw > 1000000 else E_raw * 10000.0 
-        A_raw = el['A']; A = A_raw if A_raw < 0.1 else A_raw / 10000.0 
+        E, A, I = el['E'], el['A'], el.get('I', 0.00005)
         
         dof_idx = [3*n1, 3*n1+1, 3*n1+2, 3*n2, 3*n2+1, 3*n2+2]
         u_glob = U[dof_idx]
@@ -366,7 +366,6 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
             N_val = (E * A / L) * (u_loc[3] - u_loc[0])
             el['internal'].update({'N': [N_val, N_val], 'V': [0,0], 'M': [0,0], 'x': [0, L]})
         else:
-            I_raw = el['I']; I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 
             k_loc = np.array([
                 [E*A/L, 0, 0, -E*A/L, 0, 0],
                 [0, 12*E*I/L**3, 6*E*I/L**2, 0, -12*E*I/L**3, 6*E*I/L**2],
@@ -835,19 +834,22 @@ def generate_inclined_report(sys_data):
     
     inc_sec = sys_data['inc_sec']
     add_line(f"A. Inclined Soldier ({inc_sec})", bold=True)
-    add_check("Moment", "M_max", sys_data['max_M_inc'], SECTIONS_DB.get(inc_sec, {}).get('Mall', 999), "kN.m")
-    add_check("Shear", "V_max", sys_data['max_V_inc'], SECTIONS_DB.get(inc_sec, {}).get('Qall', 999), "kN")
+    inc_db = SECTIONS_DB.get(inc_sec, {'Mall': 13.1, 'Qall': 100.8})
+    add_check("Moment", "M_max", sys_data['max_M_inc'], inc_db.get('Mall', 999), "kN.m")
+    add_check("Shear", "V_max", sys_data['max_V_inc'], inc_db.get('Qall', 999), "kN")
     add_check("Deflection", "Local Normal", sys_data['max_def_inc'], sys_data['L_tot'] * 1000 / 200, "mm")
     
     base_sec = sys_data['base_sec']
     add_line(f"B. Horizontal Base Soldier ({base_sec})", bold=True)
-    add_check("Moment", "M_max", sys_data['max_M_base'], SECTIONS_DB.get(base_sec, {}).get('Mall', 999), "kN.m")
-    add_check("Shear", "V_max", sys_data['max_V_base'], SECTIONS_DB.get(base_sec, {}).get('Qall', 999), "kN")
+    base_db = SECTIONS_DB.get(base_sec, {'Mall': 13.1, 'Qall': 100.8})
+    add_check("Moment", "M_max", sys_data['max_M_base'], base_db.get('Mall', 999), "kN.m")
+    add_check("Shear", "V_max", sys_data['max_V_base'], base_db.get('Qall', 999), "kN")
     add_check("Deflection", "Local Normal", sys_data['max_def_base'], sys_data['X_tot'] * 1000 / 200, "mm")
     
     add_line("C. Push-Pull Struts (Axial Force)", bold=True)
     for idx, st_val in enumerate(sys_data['struts_res']):
-        allow = STRUTS_DB.get(st_val['type'], {}).get('allow', 999) 
+        st_data = STRUTS_DB.get(st_val['type'], {})
+        allow = st_data.get('allow', st_data.get('pts', {0: 50.0}).get(list(st_data.get('pts', {0:50.0}).keys())[0], 50.0))
         add_check(f"Strut {idx+1} ({st_val['type']})", "N_max", st_val['N'], allow, "kN")
         
     doc.add_page_break()
@@ -937,16 +939,19 @@ def render_inclined_module():
     st.markdown("#### ⚓ 2. Ground Supports Configuration")
     st.info("The corner support is at X=0. You can define additional ground supports anywhere on the base.")
     
+    # 💡 القائمة الذكية المحدثة للركيزة الركنية
     c_c1, c_c2 = st.columns(2)
     corner_check_opt = c_c1.selectbox("Corner Support Securing Method", ["2 Tie Rods", "Shoring System", "None (On Ground directly)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
     
     corner_tr_cap = 180.0
     if corner_check_opt == "2 Tie Rods":
-        corner_tr_cap = c_c2.number_input("2 Tie-Rods SWL (kN)", value=180.0, step=10.0, on_change=lambda: st.session_state.update(inclined_solved=False))
+        # حمل الـ Tie Rod الثابت هو 90kN (إجمالي 2 Tie Rods = 180 kN)
+        corner_tr_cap = 180.0
+        c_c2.markdown("<span style='font-size:13px; color:gray; padding-top:8px; display:block;'><b>2 Tie-Rods SWL:</b> 180.0 kN (90 kN each)</span>", unsafe_allow_html=True)
 
     c_sh1, c_sh2 = st.columns(2)
-    sys_opts = ["None (On Ground directly)", "Acrow Prop", "Cuplock", "Ringlock", "Shorebrace Frame"]
-    shoring_sys = c_sh1.selectbox("Underlying Support System (Base)", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
+    sys_opts = ["None (On Ground directly)", "Acrow Prop", "Cup-lock", "Ringlock", "Shorebrace Frame"]
+    shoring_sys = c_sh1.selectbox("Underlying Support System", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     allw_sh = 9999.0
     shoring_desc = "On Ground directly"
@@ -954,21 +959,22 @@ def render_inclined_module():
     if shoring_sys == "Acrow Prop":
         with c_sh2:
             cp1, cp2 = st.columns(2)
-            prop_type = cp1.selectbox("Prop Type", ["Prop No.2", "Prop No.3", "Prop No.4", "Prop No.5"], key="sh_pt", on_change=lambda: st.session_state.update(inclined_solved=False))
+            prop_keys = list(PROP_DB.keys()) if PROP_DB else ["AEP E-450"]
+            prop_type = cp1.selectbox("Prop Type", prop_keys, key="sh_pt", on_change=lambda: st.session_state.update(inclined_solved=False))
             prop_ext = cp2.number_input("Extension (m)", value=3.0, step=0.1, key="sh_pe", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Acrow Prop", prop_type, 1.5, prop_ext)
         shoring_desc = f"{shoring_sys} ({prop_type}, Ext: {prop_ext}m)"
-    elif shoring_sys == "Cuplock":
+    elif shoring_sys == "Cup-lock":
         with c_sh2:
             cp1, cp2 = st.columns(2)
-            cu_grade = cp1.selectbox("Grade", ["S355 (st.52)", "S235"], key="sh_cg", on_change=lambda: st.session_state.update(inclined_solved=False))
+            cu_grade = cp1.selectbox("Grade", list(CUPLOCK_DB.keys()) if CUPLOCK_DB else ["S355 (st.52)"], key="sh_cg", on_change=lambda: st.session_state.update(inclined_solved=False))
             cu_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_cu", on_change=lambda: st.session_state.update(inclined_solved=False))
-        allw_sh = get_shoring_capacity("Cuplock", cu_grade, cu_unb, 3.0)
+        allw_sh = get_shoring_capacity("Cup-lock", cu_grade, cu_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({cu_grade}, Unb: {cu_unb}m)"
     elif shoring_sys == "Ringlock":
         with c_sh2:
             cp1, cp2 = st.columns(2)
-            ri_size = cp1.selectbox("Size", ["Ringlock 1.5\"", "Ringlock 2.0\""], key="sh_rs", on_change=lambda: st.session_state.update(inclined_solved=False))
+            ri_size = cp1.selectbox("Size", list(RINGLOCK_DB.keys()) if RINGLOCK_DB else ["Ringlock 1.5\""], key="sh_rs", on_change=lambda: st.session_state.update(inclined_solved=False))
             ri_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_ru", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Ringlock", ri_size, ri_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({ri_size}, Unb: {ri_unb}m)"
@@ -1125,16 +1131,21 @@ def render_inclined_module():
                 allw_str = f"{allw:.2f} {unit}"
             return f"<tr><td><b>{comp}</b></td><td>{desc}</td><td>{act:.2f} {unit}</td><td>{allw_str}</td><td>{status_html}</td></tr>"
 
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", max_M_inc, SECTIONS_DB.get(sd['inc_sec'], {}).get('Mall', 999), "kN.m")
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", max_V_inc, SECTIONS_DB.get(sd['inc_sec'], {}).get('Qall', 999), "kN")
+        inc_db = SECTIONS_DB.get(sd['inc_sec'], {'Mall': 13.1, 'Qall': 100.8})
+        base_db = SECTIONS_DB.get(sd['base_sec'], {'Mall': 13.1, 'Qall': 100.8})
+
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", max_M_inc, inc_db.get('Mall', 999), "kN.m")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", max_V_inc, inc_db.get('Qall', 999), "kN")
         html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Deflection", max_def_inc, sd['L_tot'] * 1000 / 200, "mm")
         
-        html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", max_M_base, SECTIONS_DB.get(sd['base_sec'], {}).get('Mall', 999), "kN.m")
-        html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", max_V_base, SECTIONS_DB.get(sd['base_sec'], {}).get('Qall', 999), "kN")
+        html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", max_M_base, base_db.get('Mall', 999), "kN.m")
+        html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", max_V_base, base_db.get('Qall', 999), "kN")
         html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", max_def_base, sd['X_tot'] * 1000 / 200, "mm")
         
         for i, st_res in enumerate(struts_results):
-            html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], STRUTS_DB.get(st_res['type'], {}).get('allow', 999), "kN")
+            st_data = STRUTS_DB.get(st_val['type'] if 'type' in st_val else st_res['type'], {})
+            allow = st_data.get('allow', st_data.get('pts', {0: 50.0}).get(list(st_data.get('pts', {0:50.0}).keys())[0], 50.0))
+            html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], allow, "kN")
             
         R = fea_data['R']
         for i, sup in enumerate(fea_data['supports_list']):
@@ -1187,12 +1198,29 @@ def render_inclined_module():
                 st.image(img_bufs[key], use_container_width=True)
                 st.markdown(f"<p style='text-align: center; border-bottom: 1px solid gray; padding-bottom: 5px; font-family: Arial; font-size: 14px;'>{titles[key]}</p>", unsafe_allow_html=True)
         
+        max_M_inc, max_V_inc = 0, 0
+        max_M_base, max_V_base = 0, 0
+        
+        for el in fea_data['elements']:
+            if el['type'] == 'frame':
+                max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
+                if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
+                max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
+                if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
+                
+                if el['group'] == 'inclined':
+                    max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
+                elif el['group'] == 'base':
+                    max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
+        
         struts_results = []
         for el in fea_data['elements']:
             if el['type'] == 'truss':
                 struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
             
         fea_data['sys_data'].update({
+            'max_M_inc': max_M_inc, 'max_V_inc': max_V_inc,
+            'max_M_base': max_M_base, 'max_V_base': max_V_base,
             'struts_res': struts_results,
             'img_bufs': img_bufs
         })
