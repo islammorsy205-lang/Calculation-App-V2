@@ -637,7 +637,6 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
         a = sup['angle']
         
         Rx, Ry = R_reactions[3*n], R_reactions[3*n+1]
-        
         rad = np.radians(a)
         c_a, s_a = np.cos(rad), np.sin(rad)
         
@@ -645,7 +644,6 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
         R_v = -Rx * s_a + Ry * c_a
         x, y = nodes[n][0], nodes[n][1]
         
-        # 💡 تم استبدال الـ annotate بدالة draw_reaction_arrow الأكثر دقة للأسهم المائلة
         if t == 'Roller':
             draw_reaction_arrow(ax_react, x, y, R_v, -s_a, c_a)
         else:
@@ -686,7 +684,7 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
             if el['type'] == 'truss' and val_key == 'N':
                 val = el['internal']['N'][0]
                 if abs(val) < 0.1: continue
-                nx, ny = dy/L_s, -dx/L_s  # Flipped internally to match SAP default visualization preference
+                nx, ny = dy/L_s, -dx/L_s
                 h = max(0.4, abs(val) * scale) 
                 color = color_pos if val >= 0 else color_neg
                 
@@ -708,7 +706,6 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
             if el['type'] == 'frame':
                 xs_arr = el['internal']['x']
                 vals_orig = el['internal'][val_key]
-                # 💡 عكس اتجاه الرسم بناءً على طلبك السابق ليطابق SAP2000
                 plot_vals = -vals_orig 
                 
                 px_arr = x1 + c * xs_arr - s * plot_vals * scale
@@ -923,6 +920,12 @@ def render_inclined_module():
     corner_ang = c_sup2.number_input("Corner Support Angle (0=Horiz)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False))
     corner_sup = {'type': corner_type, 'angle': corner_ang}
     
+    c_tie1, c_tie2 = st.columns(2)
+    corner_tr_cap = c_tie1.number_input("Corner 2 Tie-Rods SWL (kN)", value=180.0, step=10.0, help="Capacity of 2 Tie Rods (Assume 90 kN each)", on_change=lambda: st.session_state.update(inclined_solved=False))
+    shoring_type = c_tie2.selectbox("Underlying Support System (For Vertical Reactions)", 
+                                    ["None (On Ground directly)", "Shorebrace Frame (54 kN/leg)", "Cuplock (40 kN/leg)", "Ringlock (40 kN/leg)", "Acrow Prop (20 kN/prop)"], 
+                                    on_change=lambda: st.session_state.update(inclined_solved=False))
+    
     num_base_sups = st.number_input("Number of Additional Ground Supports", 0, 10, int(num_struts), on_change=lambda: st.session_state.update(inclined_solved=False))
     base_sups = []
     
@@ -986,7 +989,7 @@ def render_inclined_module():
 
     st.markdown("---")
     
-    col_btn, col_blank = st.columns([1, 2])
+    col_btn, col_chk, col_blank = st.columns([1.5, 1.5, 1])
     with col_btn:
         if st.button("🚀 Run Advanced FEA & Generate Report", type="primary", use_container_width=True):
             with st.spinner("Building Matrix & Solving FEA..."):
@@ -995,10 +998,72 @@ def render_inclined_module():
                     'U': U, 'R': R, 'nodes': nodes, 'elements': elements, 'display_nodes': display_nodes, 'supports_list': supports_list,
                     'sys_data': {
                         'L_tot': L_tot, 'X_tot': X_tot, 'angle': angle_deg, 'W': "Variable", 'ld_dir': "Variable",
-                        'inc_sec': inc_sec, 'base_sec': base_sec
+                        'inc_sec': inc_sec, 'base_sec': base_sec, 'corner_tr_cap': corner_tr_cap, 'shoring_type': shoring_type
                     }
                 }
                 st.session_state.inclined_solved = True
+                st.session_state.show_safety_table = False
+                
+    with col_chk:
+        if st.button("📊 Quick Safety Check Table", use_container_width=True):
+            if st.session_state.inclined_solved:
+                st.session_state.show_safety_table = not st.session_state.get('show_safety_table', False)
+            else:
+                st.warning("⚠️ Please run the FEA analysis first!")
+    
+    if getattr(st.session_state, 'show_safety_table', False) and st.session_state.inclined_solved:
+        fea_data = st.session_state.inclined_fea_data
+        sd = fea_data['sys_data']
+        
+        max_M_inc, max_V_inc, max_M_base, max_V_base = 0, 0, 0, 0
+        struts_results = []
+        
+        for el in fea_data['elements']:
+            if el['type'] == 'frame':
+                max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
+                if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
+                max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
+                if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
+                if el['group'] == 'inclined': max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
+                elif el['group'] == 'base': max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
+            elif el['type'] == 'truss':
+                struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
+        
+        html = "<table style='width:100%; text-align:center; border-collapse: collapse; margin-bottom: 20px; font-family: Arial;'>"
+        html += "<tr style='background-color:#f0f2f6; border-bottom: 2px solid #ddd;'><th>Component</th><th>Description</th><th>Actual (Applied)</th><th>Allowable (Capacity)</th><th>Status</th></tr>"
+        
+        def add_row(comp, desc, act, allw, unit):
+            color = "green" if act <= allw else "red"
+            status = "✅ SAFE" if act <= allw else "❌ UNSAFE"
+            allw_str = "No Limit" if allw > 9000 else f"{allw:.2f} {unit}"
+            return f"<tr style='border-bottom: 1px solid #eee;'><td><b>{comp}</b></td><td>{desc}</td><td>{act:.2f} {unit}</td><td>{allw_str}</td><td style='color:{color}; font-weight:bold;'>{status}</td></tr>"
+
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", max_M_inc, SECTIONS_DB.get(sd['inc_sec'], {}).get('Mall', 999), "kN.m")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", max_V_inc, SECTIONS_DB.get(sd['inc_sec'], {}).get('Qall', 999), "kN")
+        html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", max_M_base, SECTIONS_DB.get(sd['base_sec'], {}).get('Mall', 999), "kN.m")
+        html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", max_V_base, SECTIONS_DB.get(sd['base_sec'], {}).get('Qall', 999), "kN")
+        
+        for i, st_res in enumerate(struts_results):
+            html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], STRUTS_DB.get(st_res['type'], {}).get('allow', 999), "kN")
+            
+        R = fea_data['R']
+        for i, sup in enumerate(fea_data['supports_list']):
+            n = sup['node']
+            if i == 0:
+                R_res = np.hypot(R[3*n], R[3*n+1])
+                html += add_row("Corner Support", "2 x Tie Rods (Axial Force)", R_res, sd['corner_tr_cap'], "kN")
+            else:
+                Ry_abs = abs(R[3*n+1])
+                allw_sh = 9999.0
+                if "Shorebrace" in sd['shoring_type']: allw_sh = 54.0
+                elif "Cuplock" in sd['shoring_type']: allw_sh = 40.0
+                elif "Ringlock" in sd['shoring_type']: allw_sh = 40.0
+                elif "Acrow Prop" in sd['shoring_type']: allw_sh = 20.0
+                html += add_row(f"Base Support {i}", sd['shoring_type'], Ry_abs, allw_sh, "kN")
+
+        html += "</table>"
+        st.markdown("### 📊 System Components Safety Summary")
+        st.markdown(html, unsafe_allow_html=True)
     
     if st.session_state.inclined_solved:
         fea_data = st.session_state.inclined_fea_data
