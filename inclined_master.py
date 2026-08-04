@@ -15,6 +15,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+# 💡 استدعاء قواعد بيانات القطاعات
 try:
     from config import SECTIONS_DB, STRUTS_DB
 except ImportError:
@@ -22,9 +23,11 @@ except ImportError:
     SECTIONS_DB = {}
     STRUTS_DB = {}
 
+# 💡 استدعاء معادلات سعة الشدات المعدنية من ملف math_solver
 try:
     from math_solver import get_prop_allowable, get_scaffold_allowable
 except ImportError:
+    # قيم افتراضية في حالة عدم العثور على الملف
     def get_prop_allowable(*args): return 20.0
     def get_scaffold_allowable(*args): return 40.0
 
@@ -357,7 +360,7 @@ def solve_fea_engine(nodes, elements, nodal_loads, supports_list):
             [0, 0, 0, c, s, 0], [0, 0, 0, -s, c, 0], [0, 0, 0, 0, 0, 1]
         ])
         u_loc = T @ u_glob
-        el['internal'] = {'u_loc': u_loc} # حفظ الـ Displacements للترخيم
+        el['internal'] = {'u_loc': u_loc}
         
         if el['type'] == 'truss':
             N_val = (E * A / L) * (u_loc[3] - u_loc[0])
@@ -934,41 +937,49 @@ def render_inclined_module():
     st.markdown("#### ⚓ 2. Ground Supports Configuration")
     st.info("The corner support is at X=0. You can define additional ground supports anywhere on the base.")
     
-    c_sup1, c_sup2 = st.columns(2)
-    corner_type = c_sup1.selectbox("Corner Support (Bottom-Left)", ["Hinged", "Roller", "Fixed"], key="corn_type", on_change=lambda: st.session_state.update(inclined_solved=False))
-    corner_ang = c_sup2.number_input("Corner Support Angle (0=Horiz)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False))
-    corner_sup = {'type': corner_type, 'angle': corner_ang}
+    c_c1, c_c2 = st.columns(2)
+    corner_check_opt = c_c1.selectbox("Corner Support Securing Method", ["2 Tie Rods", "Shoring System", "None (On Ground directly)"], key="corn_chk_opt", on_change=lambda: st.session_state.update(inclined_solved=False))
     
-    c_tie1, c_tie2 = st.columns(2)
-    corner_tr_cap = c_tie1.number_input("Corner 2 Tie-Rods SWL (kN)", value=180.0, step=10.0, help="Capacity of 2 Tie Rods (Assume 90 kN each)", on_change=lambda: st.session_state.update(inclined_solved=False))
-    
+    corner_tr_cap = 180.0
+    if corner_check_opt == "2 Tie Rods":
+        corner_tr_cap = c_c2.number_input("2 Tie-Rods SWL (kN)", value=180.0, step=10.0, on_change=lambda: st.session_state.update(inclined_solved=False))
+
+    c_sh1, c_sh2 = st.columns(2)
     sys_opts = ["None (On Ground directly)", "Acrow Prop", "Cuplock", "Ringlock", "Shorebrace Frame"]
-    shoring_sys = c_tie2.selectbox("Underlying Support System", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
+    shoring_sys = c_sh1.selectbox("Underlying Support System (Base)", sys_opts, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     allw_sh = 9999.0
     shoring_desc = "On Ground directly"
     
     if shoring_sys == "Acrow Prop":
-        c_sh1, c_sh2 = st.columns(2)
-        prop_type = c_sh1.selectbox("Prop Type", ["Prop No.2", "Prop No.3", "Prop No.4", "Prop No.5"], key="sh_pt")
-        prop_ext = c_sh2.number_input("Extension (m)", value=3.0, step=0.1, key="sh_pe")
+        with c_sh2:
+            cp1, cp2 = st.columns(2)
+            prop_type = cp1.selectbox("Prop Type", ["Prop No.2", "Prop No.3", "Prop No.4", "Prop No.5"], key="sh_pt", on_change=lambda: st.session_state.update(inclined_solved=False))
+            prop_ext = cp2.number_input("Extension (m)", value=3.0, step=0.1, key="sh_pe", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Acrow Prop", prop_type, 1.5, prop_ext)
         shoring_desc = f"{shoring_sys} ({prop_type}, Ext: {prop_ext}m)"
     elif shoring_sys == "Cuplock":
-        c_sh1, c_sh2 = st.columns(2)
-        cu_grade = c_sh1.selectbox("Grade", ["S355 (st.52)", "S235"], key="sh_cg")
-        cu_unb = c_sh2.number_input("Unbraced Length (m)", value=1.5, step=0.1, key="sh_cu")
+        with c_sh2:
+            cp1, cp2 = st.columns(2)
+            cu_grade = cp1.selectbox("Grade", ["S355 (st.52)", "S235"], key="sh_cg", on_change=lambda: st.session_state.update(inclined_solved=False))
+            cu_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_cu", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Cuplock", cu_grade, cu_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({cu_grade}, Unb: {cu_unb}m)"
     elif shoring_sys == "Ringlock":
-        c_sh1, c_sh2 = st.columns(2)
-        ri_size = c_sh1.selectbox("Size", ["Ringlock 1.5\"", "Ringlock 2.0\""], key="sh_rs")
-        ri_unb = c_sh2.number_input("Unbraced Length (m)", value=1.5, step=0.1, key="sh_ru")
+        with c_sh2:
+            cp1, cp2 = st.columns(2)
+            ri_size = cp1.selectbox("Size", ["Ringlock 1.5\"", "Ringlock 2.0\""], key="sh_rs", on_change=lambda: st.session_state.update(inclined_solved=False))
+            ri_unb = cp2.number_input("Unbraced (m)", value=1.5, step=0.1, key="sh_ru", on_change=lambda: st.session_state.update(inclined_solved=False))
         allw_sh = get_shoring_capacity("Ringlock", ri_size, ri_unb, 3.0)
         shoring_desc = f"{shoring_sys} ({ri_size}, Unb: {ri_unb}m)"
     elif shoring_sys == "Shorebrace Frame":
         allw_sh = 54.0
         shoring_desc = "Shorebrace Frame"
+
+    c_sup1, c_sup2 = st.columns(2)
+    corner_type = c_sup1.selectbox("Corner Support Physical Type", ["Hinged", "Roller", "Fixed"], key="corn_type", on_change=lambda: st.session_state.update(inclined_solved=False))
+    corner_ang = c_sup2.number_input("Corner Support Angle (0=Horiz)", value=0.0, step=15.0, key="corn_ang", on_change=lambda: st.session_state.update(inclined_solved=False))
+    corner_sup = {'type': corner_type, 'angle': corner_ang}
     
     num_base_sups = st.number_input("Number of Additional Ground Supports", 0, 10, int(num_struts), on_change=lambda: st.session_state.update(inclined_solved=False))
     base_sups = []
@@ -1042,7 +1053,8 @@ def render_inclined_module():
                     'U': U, 'R': R, 'nodes': nodes, 'elements': elements, 'display_nodes': display_nodes, 'supports_list': supports_list,
                     'sys_data': {
                         'L_tot': L_tot, 'X_tot': X_tot, 'angle': angle_deg, 'W': "Variable", 'ld_dir': "Variable",
-                        'inc_sec': inc_sec, 'base_sec': base_sec, 'corner_tr_cap': corner_tr_cap, 
+                        'inc_sec': inc_sec, 'base_sec': base_sec, 
+                        'corner_check_opt': corner_check_opt, 'corner_tr_cap': corner_tr_cap, 
                         'shoring_type': shoring_desc, 'allw_sh': allw_sh
                     }
                 }
@@ -1128,8 +1140,16 @@ def render_inclined_module():
         for i, sup in enumerate(fea_data['supports_list']):
             n = sup['node']
             if i == 0:
-                R_res = np.hypot(R[3*n], R[3*n+1])
-                html += add_row("Corner Support", "2 x Tie Rods (Axial Force)", R_res, sd['corner_tr_cap'], "kN")
+                chk_opt = sd.get('corner_check_opt', "2 Tie Rods")
+                if chk_opt == "2 Tie Rods":
+                    R_res = np.hypot(R[3*n], R[3*n+1])
+                    html += add_row("Corner Support", "2 x Tie Rods (Resultant Force)", R_res, sd['corner_tr_cap'], "kN")
+                elif chk_opt == "Shoring System":
+                    Ry_abs = abs(R[3*n+1])
+                    html += add_row("Corner Support", f"{sd['shoring_type']} (Vertical)", Ry_abs, sd['allw_sh'], "kN")
+                else:
+                    R_res = np.hypot(R[3*n], R[3*n+1])
+                    html += add_row("Corner Support", "None (On Ground)", R_res, 9999.0, "kN")
             else:
                 Ry_abs = abs(R[3*n+1])
                 html += add_row(f"Base Support {i}", sd['shoring_type'], Ry_abs, sd['allw_sh'], "kN")
@@ -1167,29 +1187,12 @@ def render_inclined_module():
                 st.image(img_bufs[key], use_container_width=True)
                 st.markdown(f"<p style='text-align: center; border-bottom: 1px solid gray; padding-bottom: 5px; font-family: Arial; font-size: 14px;'>{titles[key]}</p>", unsafe_allow_html=True)
         
-        max_M_inc, max_V_inc = 0, 0
-        max_M_base, max_V_base = 0, 0
-        
-        for el in fea_data['elements']:
-            if el['type'] == 'frame':
-                max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
-                if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
-                max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
-                if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
-                
-                if el['group'] == 'inclined':
-                    max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
-                elif el['group'] == 'base':
-                    max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
-        
         struts_results = []
         for el in fea_data['elements']:
             if el['type'] == 'truss':
                 struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
             
         fea_data['sys_data'].update({
-            'max_M_inc': max_M_inc, 'max_V_inc': max_V_inc,
-            'max_M_base': max_M_base, 'max_V_base': max_V_base,
             'struts_res': struts_results,
             'img_bufs': img_bufs
         })
