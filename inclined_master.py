@@ -8,7 +8,6 @@ import os
 import re
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -53,8 +52,9 @@ def get_valid_struts(req_len, struts_db):
 def apply_plot_styles():
     mpl.rcParams['font.family'] = 'sans-serif'
     mpl.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
-    mpl.rcParams['axes.linewidth'] = 0.5
-    mpl.rcParams['font.size'] = 8
+    mpl.rcParams['axes.linewidth'] = 0.3
+    mpl.rcParams['font.size'] = 7
+    mpl.rcParams['font.weight'] = 'normal'
 
 # =========================================================
 # 1. Geometry & Mesh Generator
@@ -277,7 +277,7 @@ def solve_fea_engine(nodes, elements, nodal_loads):
         
         if el['type'] == 'truss':
             N_val = (E * A / L) * (u_loc[3] - u_loc[0])
-            el['internal'] = {'N': [N_val, N_val], 'V': [0,0], 'M': [0,0]}
+            el['internal'] = {'N': [N_val, N_val], 'V': [0,0], 'M': [0,0], 'x': [0, L]}
         else:
             I_raw = el['I']; I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 
             k_loc = np.array([
@@ -298,11 +298,18 @@ def solve_fea_engine(nodes, elements, nodal_loads):
                 -(2*py1 + 3*py2)*L**2/60.0
             ])
             f_end = k_loc @ u_loc - f_eq_loc
-            el['internal'] = {
-                'N': [-f_end[0], f_end[3]],
-                'V': [f_end[1], -f_end[4]],
-                'M': [-f_end[2], f_end[5]]
-            }
+            
+            xs = np.linspace(0, L, 11)
+            N_arr = np.zeros_like(xs)
+            V_arr = np.zeros_like(xs)
+            M_arr = np.zeros_like(xs)
+            
+            for i, x in enumerate(xs):
+                N_arr[i] = -f_end[0] - (px1*x + (px2-px1)*x**2/(2*L))
+                V_arr[i] = f_end[1] + (py1*x + (py2-py1)*x**2/(2*L))
+                M_arr[i] = -f_end[2] + f_end[1]*x + py1*x**2/2.0 + (py2-py1)*x**3/(6*L)
+                
+            el['internal'] = {'N': N_arr, 'V': V_arr, 'M': M_arr, 'x': xs}
             
     return U, R_reactions
 
@@ -318,8 +325,8 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
 
     for i, n in enumerate(nodes):
         x, y = n[0], n[1]
-        if n[2] and n[3]: ax.plot(x, y, marker='^', color='orange', markersize=10, zorder=5)
-        elif not n[2] and n[3]: ax.plot(x, y, marker='o', color='green', markersize=8, zorder=5)
+        if n[2] and n[3]: ax.plot(x, y, marker='^', color='orange', markersize=8, zorder=5)
+        elif not n[2] and n[3]: ax.plot(x, y, marker='o', color='green', markersize=6, zorder=5)
 
     for el in elements:
         n1, n2 = nodes[el['n1']], nodes[el['n2']]
@@ -335,14 +342,14 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     for i, seg in enumerate(L_segs):
         px = (curr_l + seg/2) * c_ang
         py = (curr_l + seg/2) * s_ang
-        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center', fontname='Arial')
+        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center')
         curr_l += seg
         
     curr_x = 0.0
     for i, seg in enumerate(X_segs):
         px = curr_x + seg/2
         py = 0.0
-        ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center', fontname='Arial')
+        ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center')
         curr_x += seg
 
     for ld in applied_loads:
@@ -356,10 +363,10 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
             arrow_len = 1.0
             if dir_type == 'Gravity (Vertical ↓)':
                 ax.arrow(px, py + arrow_len + 0.1, 0, -arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                ax.text(px, py + arrow_len + 0.4, f"{w1} kN", color='fuchsia', fontsize=8, ha='center', fontname='Arial')
+                ax.text(px, py + arrow_len + 0.4, f"{w1} kN", color='fuchsia', fontsize=8, ha='center')
             else:
                 ax.arrow(px - s_ang*(arrow_len+0.1), py + c_ang*(arrow_len+0.1), s_ang*arrow_len, -c_ang*arrow_len, head_width=0.15, head_length=0.2, fc='fuchsia', ec='fuchsia', zorder=4, linewidth=0.5)
-                ax.text(px - s_ang*(arrow_len+0.4), py + c_ang*(arrow_len+0.4), f"{w1} kN", color='fuchsia', fontsize=8, ha='center', rotation=angle_deg, fontname='Arial')
+                ax.text(px - s_ang*(arrow_len+0.4), py + c_ang*(arrow_len+0.4), f"{w1} kN", color='fuchsia', fontsize=8, ha='center', rotation=angle_deg)
         else:
             num_arrows = max(3, int((end_L - start_L) / 0.5))
             xs = np.linspace(start_L, end_L, num_arrows)
@@ -379,9 +386,9 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
             mid_y = mid_L * s_ang
             txt = f"{w1}" if ld['type'] == 'Uniform' else f"{w1} to {w2}"
             if dir_type == 'Gravity (Vertical ↓)':
-                ax.text(mid_x, mid_y + 1.2, f"{txt} kN/m\n({dir_type.split()[0]})", color='magenta', fontsize=7, ha='center', fontname='Arial')
+                ax.text(mid_x, mid_y + 1.2, f"{txt} kN/m\n({dir_type.split()[0]})", color='magenta', fontsize=7, ha='center')
             else:
-                ax.text(mid_x - s_ang*1.2, mid_y + c_ang*1.2, f"{txt} kN/m", color='magenta', fontsize=7, ha='center', rotation=angle_deg, fontname='Arial')
+                ax.text(mid_x - s_ang*1.2, mid_y + c_ang*1.2, f"{txt} kN/m", color='magenta', fontsize=7, ha='center', rotation=angle_deg)
 
     plt.tight_layout()
     img_buf = io.BytesIO()
@@ -390,49 +397,71 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     img_buf.seek(0)
     return img_buf
 
-def plot_sap2000_diagrams(nodes, elements, scales, inc_sec, base_sec):
+def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, inc_sec, base_sec):
     apply_plot_styles()
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    ax_geom, ax_n, ax_v, ax_m = axes.flatten()
+    fig = plt.figure(figsize=(18, 12))
     
-    for ax in axes.flatten():
+    # 💡 توزيع جديد للوحات يشمل الـ Reactions
+    ax_geom = plt.subplot(2, 3, 1)
+    ax_react = plt.subplot(2, 3, 2)
+    ax_n = plt.subplot(2, 3, 3)
+    ax_v = plt.subplot(2, 3, 4)
+    ax_m = plt.subplot(2, 3, 5)
+    
+    axes = [ax_geom, ax_react, ax_n, ax_v, ax_m]
+    for ax in axes:
         ax.set_aspect('equal', adjustable='datalim')
-        ax.grid(True, linestyle=':', alpha=0.3)
         ax.axis('off')
         
-    def draw_base(ax, title):
-        ax.set_title(title, fontsize=12, fontweight='normal', fontname='Arial')
+    def draw_bottom_title(ax, title):
+        ax.text(0.5, -0.05, title, transform=ax.transAxes, ha='center', va='top', fontname='Arial', fontsize=11, fontweight='normal')
+        w = len(title) * 0.012
+        ax.plot([0.5 - w, 0.5 + w], [-0.10, -0.10], transform=ax.transAxes, color='black', lw=0.6, clip_on=False)
+
+    def draw_base(ax):
         for i, n in enumerate(nodes):
             x, y = n[0], n[1]
-            if n[2] and n[3]: ax.plot(x, y, marker='^', color='orange', markersize=10, zorder=5)
-            elif not n[2] and n[3]: ax.plot(x, y, marker='o', color='green', markersize=8, zorder=5)
+            if n[2] and n[3]: ax.plot(x, y, marker='^', color='orange', markersize=8, zorder=5)
+            elif not n[2] and n[3]: ax.plot(x, y, marker='o', color='green', markersize=6, zorder=5)
         for el in elements:
             n1, n2 = nodes[el['n1']], nodes[el['n2']]
             color = 'black' if el['type'] == 'frame' else 'gray'
             style = '-' if el['type'] == 'frame' else '--'
             ax.plot([n1[0], n2[0]], [n1[1], n2[1]], color=color, linestyle=style, linewidth=0.5, zorder=1)
 
-    draw_base(ax_geom, "System Geometry & Profiles")
-    draw_base(ax_n, "Axial Force Diagram (kN)")
-    draw_base(ax_v, "Shear Force Diagram (kN)")
-    draw_base(ax_m, "Bending Moment Diagram (kN.m)")
+    for ax in axes: draw_base(ax)
     
-    inc_drawn, base_drawn = False, False
+    draw_bottom_title(ax_geom, "System Geometry")
+    draw_bottom_title(ax_react, "Reactions Diagram (kN)")
+    draw_bottom_title(ax_n, "Axial Force Diagram (kN)")
+    draw_bottom_title(ax_v, "Shear Force Diagram (kN)")
+    draw_bottom_title(ax_m, "Bending Moment Diagram (kN.m)")
+    
+    # --- Geometry Names ---
     for el in elements:
         n1, n2 = nodes[el['n1']], nodes[el['n2']]
-        if el['group'] == 'inclined' and not inc_drawn:
-            ax_geom.text((n1[0]+n2[0])/2 - 0.5, (n1[1]+n2[1])/2 + 0.5, inc_sec, color='blue', fontsize=9, rotation=np.degrees(np.arctan2(el['s'], el['c'])), fontname='Arial')
-            inc_drawn = True
-        elif el['group'] == 'base' and not base_drawn:
-            ax_geom.text((n1[0]+n2[0])/2, -0.4, base_sec, color='blue', fontsize=9, ha='center', fontname='Arial')
-            base_drawn = True
+        mid_x, mid_y = (n1[0]+n2[0])/2, (n1[1]+n2[1])/2
+        if el['group'] == 'inclined':
+            ax_geom.text(mid_x - 0.4, mid_y + 0.4, el['sec'], color='dimgray', fontsize=8, rotation=np.degrees(np.arctan2(el['s'], el['c'])), ha='center')
+        elif el['group'] == 'base':
+            ax_geom.text(mid_x, mid_y - 0.4, el['sec'], color='dimgray', fontsize=8, ha='center')
         elif el['group'] == 'strut':
-            ax_geom.text((n1[0]+n2[0])/2, (n1[1]+n2[1])/2, el['sec'], color='red', fontsize=8, rotation=np.degrees(np.arctan2(n2[1]-n1[1], n2[0]-n1[0])), fontname='Arial')
+            ax_geom.text(mid_x, mid_y + 0.2, el['sec'], color='dimgray', fontsize=7, rotation=np.degrees(np.arctan2(n2[1]-n1[1], n2[0]-n1[0])), ha='center')
 
-    def fill_diagram(ax, val_key, scale, color_pos, color_neg):
-        max_vals = {'inclined': 0, 'base': 0}
-        max_pts = {'inclined': None, 'base': None}
-        
+    # --- Reactions Plot ---
+    for i, n in enumerate(nodes):
+        if n[2] or n[3]:
+            Rx, Ry = R_reactions[3*i], R_reactions[3*i+1]
+            x, y = n[0], n[1]
+            if abs(Rx) > 0.1:
+                ax_react.annotate("", xy=(x, y), xytext=(x - 1.2*np.sign(Rx), y), arrowprops=dict(color='purple', width=0.5, headwidth=4))
+                ax_react.text(x - 1.5*np.sign(Rx), y, f"{abs(Rx):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+            if abs(Ry) > 0.1:
+                ax_react.annotate("", xy=(x, y), xytext=(x, y - 1.2*np.sign(Ry)), arrowprops=dict(color='purple', width=0.5, headwidth=4))
+                ax_react.text(x, y - 1.5*np.sign(Ry), f"{abs(Ry):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+
+    # --- 💡 Hatching Function (Outline with vertical lines, no fill) ---
+    def hatch_diagram(ax, val_key, scale, color_pos, color_neg):
         for el in elements:
             n1, n2 = nodes[el['n1']], nodes[el['n2']]
             x1, y1 = n1[0], n1[1]
@@ -441,51 +470,82 @@ def plot_sap2000_diagrams(nodes, elements, scales, inc_sec, base_sec):
             L_s = np.hypot(dx, dy)
             if L_s < 1e-5: continue
             
+            c, s = dx/L_s, dy/L_s
+            
+            # --- رسم أسماء القطاعات على كل دياجرام بلون خفيف ---
+            mid_x, mid_y = x1 + dx/2, y1 + dy/2
+            if el['type'] == 'frame':
+                offset_c, offset_s = -c*0.4, s*0.4
+                ax.text(mid_x + offset_s, mid_y + offset_c, el['sec'], color='gray', fontsize=6, alpha=0.8, ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
+            
             if el['type'] == 'truss' and val_key == 'N':
                 val = el['internal']['N'][0]
+                if abs(val) < 0.1: continue
                 nx, ny = -dy/L_s, dx/L_s
                 h = val * scale
+                color = color_pos if val >= 0 else color_neg
                 
-                p1 = (x1, y1)
-                p2 = (x2, y2)
-                p3 = (x2 + nx * h, y2 + ny * h)
-                p4 = (x1 + nx * h, y1 + ny * h)
+                p1, p2 = (x1, y1), (x2, y2)
+                p3, p4 = (x2 + nx * h, y2 + ny * h), (x1 + nx * h, y1 + ny * h)
                 
-                color = 'red' if val >= 0 else 'blue'
-                ax.add_patch(Polygon([p1, p2, p3, p4], facecolor=color, alpha=0.4, edgecolor='black', linewidth=0.5, zorder=2))
+                ax.plot([x1, p4[0], p3[0], x2, x1], [y1, p4[1], p3[1], y2, y1], color=color, linewidth=0.8)
                 
-                ax.text(x1 + dx/2 + nx * h/2, y1 + dy/2 + ny * h/2, f"{abs(val):.1f}", color='black', fontsize=8, fontname='Arial', ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
-                ax.text(x1 + dx/2 - nx * 0.3, y1 + dy/2 - ny * 0.3, el['sec'], color='black', fontsize=7, fontname='Arial', ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
+                num_lines = max(5, int(L_s / 0.15))
+                for i in range(1, num_lines):
+                    frac = i / num_lines
+                    lx, ly = x1 + frac * dx, y1 + frac * dy
+                    ax.plot([lx, lx + nx * h], [ly, ly + ny * h], color=color, linewidth=0.3, alpha=0.6)
+                    
+                mid_h_x, mid_h_y = x1 + dx/2 + nx*h/2, y1 + dy/2 + ny*h/2
+                ax.text(mid_h_x, mid_h_y, f"{abs(val):.1f}", color='black', fontsize=7, fontname='Arial', ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
+                
+                # اسم القطاع موازي وملاصق للنهيز من الأسفل
+                ax.text(x1 + dx/2 - nx*0.2, y1 + dy/2 - ny*0.2, el['sec'], color='black', fontsize=6, fontname='Arial', ha='center', va='center', rotation=np.degrees(np.arctan2(dy, dx)))
                 continue
                 
             if el['type'] == 'frame':
-                c, s = el['c'], el['s']
-                v1, v2 = el['internal'][val_key][0], el['internal'][val_key][1]
+                xs_arr = el['internal']['x']
+                vals = el['internal'][val_key]
+                v_start, v_end = vals[0], vals[-1]
                 
-                px1 = x1 - s * v1 * scale
-                py1 = y1 + c * v1 * scale
-                px2 = x2 - s * v2 * scale
-                py2 = y2 + c * v2 * scale
+                px_arr = x1 + c * xs_arr - s * vals * scale
+                py_arr = y1 + s * xs_arr + c * vals * scale
                 
-                pts = [(x1,y1), (px1,py1), (px2,py2), (x2,y2)]
-                color = color_pos if (v1+v2) >= 0 else color_neg
-                ax.add_patch(Polygon(pts, facecolor=color, alpha=0.4, edgecolor='black', linewidth=0.5, zorder=2))
+                ax.plot(np.append(x1, np.append(px_arr, x2)), np.append(y1, np.append(py_arr, y2)), color=color_pos, linewidth=0.8)
+                ax.plot([x1, x2], [y1, y2], color='black', linewidth=0.5)
                 
-                grp = el['group']
-                max_v = max(abs(v1), abs(v2))
-                if max_v > max_vals[grp]:
-                    max_vals[grp] = max_v
-                    max_pts[grp] = (px1, py1) if abs(v1) > abs(v2) else (px2, py2)
+                num_lines = max(4, int(L_s / 0.2))
+                for i in range(1, num_lines):
+                    frac = i / num_lines
+                    lx, ly = x1 + frac * dx, y1 + frac * dy
+                    idx_val = int(frac * (len(vals)-1))
+                    lv = vals[idx_val]
+                    hx, hy = lx - s * lv * scale, ly + c * lv * scale
+                    line_color = color_pos if lv >= 0 else color_neg
+                    ax.plot([lx, hx], [ly, hy], color=line_color, linewidth=0.3, alpha=0.6)
+                    
+                # 💡 طباعة القيم في البداية، النهاية، والـ Max
+                def write_val(x_base, y_base, v, offset=0.2):
+                    if abs(v) > 0.1:
+                        txt_x = x_base - s * v * scale - s * np.sign(v) * offset
+                        txt_y = y_base + c * v * scale + c * np.sign(v) * offset
+                        ax.text(txt_x, txt_y, f"{abs(v):.1f}", color='black', fontsize=7, fontname='Arial', ha='center', va='center')
+                
+                write_val(x1, y1, v_start)
+                write_val(x2, y2, v_end)
+                
+                max_idx = np.argmax(np.abs(vals))
+                if 0 < max_idx < len(vals)-1:
+                    v_max = vals[max_idx]
+                    x_m = x1 + c * xs_arr[max_idx]
+                    y_m = y1 + s * xs_arr[max_idx]
+                    write_val(x_m, y_m, v_max, offset=0.3)
 
-        for grp, pt in max_pts.items():
-            if pt and max_vals[grp] > 0.1:
-                ax.text(pt[0], pt[1] + 0.2, f"Max: {max_vals[grp]:.1f}", color='black', fontsize=8, fontname='Arial', ha='center')
-
-    fill_diagram(ax_n, 'N', scales['N'], 'blue', 'red')    
-    fill_diagram(ax_v, 'V', scales['V'], 'purple', 'magenta') 
-    fill_diagram(ax_m, 'M', scales['M'], 'green', 'yellow')
+    hatch_diagram(ax_n, 'N', scales['N'], 'blue', 'red')    
+    hatch_diagram(ax_v, 'V', scales['V'], 'purple', 'magenta') 
+    hatch_diagram(ax_m, 'M', scales['M'], 'green', 'yellow')
     
-    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4, bottom=0.1)
     img_buf = io.BytesIO()
     plt.savefig(img_buf, format='png', dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -570,23 +630,25 @@ def generate_inclined_report(sys_data):
 def render_inclined_module():
     st.markdown("## 📐 Inclined Formwork System (Advanced FEA)")
     
+    # تهيئة الذاكرة لحفظ نتائج الحل
+    if 'inclined_solved' not in st.session_state:
+        st.session_state.inclined_solved = False
+        
     c_in, c_plot = st.columns([1.3, 1])
     
     with c_in:
         st.markdown("#### 🪵 1. Geometry Setup")
         c_top1, c_top2 = st.columns(2)
-        angle_deg = c_top1.number_input("Inclination Angle (Degrees, < 90)", value=60.0, step=5.0)
+        angle_deg = c_top1.number_input("Inclination Angle (Degrees, < 90)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
         angle_rad = np.radians(angle_deg)
-        num_struts = c_top2.number_input("Number of Push-Pulls", min_value=1, max_value=5, value=2, step=1)
+        num_struts = c_top2.number_input("Number of Push-Pulls", min_value=1, max_value=5, value=2, step=1, on_change=lambda: st.session_state.update(inclined_solved=False))
         
         c_p1, c_p2 = st.columns(2)
-        
-        # 💡 إعطاء أولوية لظهور Soldier كاختيار افتراضي
         sec_list = list(SECTIONS_DB.keys()) if SECTIONS_DB else ["Soldier U100"]
         default_idx = next((i for i, sec in enumerate(sec_list) if 'Soldier' in sec), 0)
         
-        inc_sec = c_p1.selectbox("Profile (Inclined)", sec_list, index=default_idx)
-        base_sec = c_p2.selectbox("Profile (Base)", sec_list, index=default_idx)
+        inc_sec = c_p1.selectbox("Profile (Inclined)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
+        base_sec = c_p2.selectbox("Profile (Base)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
         
         st.markdown("**Struts Connections & Segments**")
         L_segs, X_segs, strut_types = [], [], []
@@ -594,102 +656,113 @@ def render_inclined_module():
         
         for j in range(int(num_struts)):
             cl1, cl2, cl3 = st.columns([1, 1, 1.5])
-            l_val = cl1.number_input(f"L{j+1} on Inclined (m)", value=2.0, step=0.5, key=f"L_{j}")
-            x_val = cl2.number_input(f"X{j+1} on Base (m)", value=1.5, step=0.5, key=f"X_{j}")
+            l_val = cl1.number_input(f"L{j+1} on Inclined (m)", value=2.0, step=0.5, key=f"L_{j}", on_change=lambda: st.session_state.update(inclined_solved=False))
+            x_val = cl2.number_input(f"X{j+1} on Base (m)", value=1.5, step=0.5, key=f"X_{j}", on_change=lambda: st.session_state.update(inclined_solved=False))
             
             L_segs.append(l_val)
             X_segs.append(x_val)
             L_cum += l_val
             X_cum += x_val
             
-            # 💡 فلتر النهايز اللحظي بناءً على الطول الفعلي للوتر
             req_len = np.hypot(X_cum - L_cum * np.cos(angle_rad), 0 - L_cum * np.sin(angle_rad))
             valid_struts = get_valid_struts(req_len, STRUTS_DB)
-            
-            st_type = cl3.selectbox(f"Strut {j+1} (Req: {req_len:.2f}m)", valid_struts, key=f"st_{j}")
+            st_type = cl3.selectbox(f"Strut {j+1} (Req: {req_len:.2f}m)", valid_struts, key=f"st_{j}", on_change=lambda: st.session_state.update(inclined_solved=False))
             strut_types.append(st_type)
             
         cr1, cr2 = st.columns(2)
-        L_rem = cr1.number_input("Remaining Inclined Top L (m)", value=1.0, step=0.5)
-        X_rem = cr2.number_input("Remaining Base Right X (m)", value=0.5, step=0.5)
+        L_rem = cr1.number_input("Remaining Inclined Top L (m)", value=1.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+        X_rem = cr2.number_input("Remaining Base Right X (m)", value=0.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
         
         st.markdown("#### 🎯 2. Applied Loads on Inclined Soldier")
-        num_loads = st.number_input("Number of Load Blocks", 1, 5, 1)
+        num_loads = st.number_input("Number of Load Blocks", 1, 5, 1, on_change=lambda: st.session_state.update(inclined_solved=False))
         applied_loads = []
         for i in range(int(num_loads)):
             with st.expander(f"Load Block {i+1}", expanded=True):
-                l_type = st.selectbox("Load Type", ["Uniform", "Trapezoidal/Triangular", "Point Load"], key=f"lt_{i}")
+                l_type = st.selectbox("Load Type", ["Uniform", "Trapezoidal/Triangular", "Point Load"], key=f"lt_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 cl1, cl2 = st.columns(2)
-                start_l = cl1.number_input("Start Distance from bottom (m)", value=0.0, step=0.5, key=f"ls_{i}")
+                start_l = cl1.number_input("Start Distance from bottom (m)", value=0.0, step=0.5, key=f"ls_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 if l_type == "Point Load":
                     end_l = start_l
                 else:
-                    len_l = cl2.number_input("Load Length (m)", value=sum(L_segs)+L_rem, step=0.5, key=f"ll_{i}")
+                    len_l = cl2.number_input("Load Length (m)", value=sum(L_segs)+L_rem, step=0.5, key=f"ll_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
                     end_l = start_l + len_l
                     
                 cw1, cw2, cw3 = st.columns(3)
-                w1 = cw1.number_input("W1 (kN/m or kN)", value=15.0, step=1.0, key=f"w1_{i}")
-                w2 = cw2.number_input("W2 (kN/m)", value=15.0 if l_type=='Uniform' else 0.0, step=1.0, key=f"w2_{i}") if l_type != "Point Load" else w1
-                ldir = cw3.selectbox("Direction", ["Gravity (Vertical ↓)", "Perpendicular (Local ↘)"], key=f"ldir_{i}")
+                w1 = cw1.number_input("W1 (kN/m or kN)", value=15.0, step=1.0, key=f"w1_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                w2 = cw2.number_input("W2 (kN/m)", value=15.0 if l_type=='Uniform' else 0.0, step=1.0, key=f"w2_{i}", on_change=lambda: st.session_state.update(inclined_solved=False)) if l_type != "Point Load" else w1
+                ldir = cw3.selectbox("Direction", ["Gravity (Vertical ↓)", "Perpendicular (Local ↘)"], key=f"ldir_{i}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 
                 applied_loads.append({'type': l_type, 'start': start_l, 'end': end_l, 'w1': w1, 'w2': w2, 'dir': ldir})
 
     nodes, elements, nodal_loads, L_tot, X_tot = build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_sec, base_sec, strut_types)
 
     with c_plot:
-        st.markdown("<h4 style='text-align: center; font-family: Arial; font-weight: normal;'>Live Assigned Loads</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; font-family: Arial; font-weight: normal; border-bottom: 1px solid black; padding-bottom: 5px;'>Live Assigned Loads</h4>", unsafe_allow_html=True)
         live_img_buf = plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg, inc_sec, base_sec)
         st.image(live_img_buf, use_container_width=True)
-        
-        with st.expander("⚙️ Diagram Scale Controls", expanded=True):
-            sc_n = st.slider("Axial Force Scale", 0.001, 0.100, 0.02, step=0.005)
-            sc_v = st.slider("Shear Force Scale", 0.001, 0.100, 0.02, step=0.005)
-            sc_m = st.slider("Moment Scale", 0.01, 0.50, 0.10, step=0.01)
-            scales = {'N': sc_n, 'V': sc_v, 'M': sc_m}
 
     st.markdown("---")
     
-    if st.button("🚀 Run Advanced FEA & Generate Report", type="primary", use_container_width=True):
-        with st.spinner("Building Matrix & Solving FEA..."):
-            U, R = solve_fea_engine(nodes, elements, nodal_loads)
+    col_btn, col_blank = st.columns([1, 2])
+    with col_btn:
+        if st.button("🚀 Run Advanced FEA & Generate Report", type="primary", use_container_width=True):
+            with st.spinner("Building Matrix & Solving FEA..."):
+                U, R = solve_fea_engine(nodes, elements, nodal_loads)
+                st.session_state.inclined_fea_data = {
+                    'U': U, 'R': R, 'nodes': nodes, 'elements': elements,
+                    'sys_data': {
+                        'L_tot': L_tot, 'angle': angle_deg, 'W': "Variable", 'ld_dir': "Variable",
+                        'inc_sec': inc_sec, 'base_sec': base_sec
+                    }
+                }
+                st.session_state.inclined_solved = True
+    
+    # 💡 إظهار أدوات التحكم والنتائج فقط بعد الضغط على Run مع الاحتفاظ بها نشطة
+    if st.session_state.inclined_solved:
+        fea_data = st.session_state.inclined_fea_data
+        
+        st.markdown("### 🎛️ Analysis Results & Formatting")
+        with st.expander("⚙️ Diagram Scale Controls", expanded=True):
+            c_s1, c_s2, c_s3 = st.columns(3)
+            sc_n = c_s1.slider("Axial Force Scale", 0.001, 0.100, 0.02, step=0.005)
+            sc_v = c_s2.slider("Shear Force Scale", 0.001, 0.100, 0.02, step=0.005)
+            sc_m = c_s3.slider("Moment Scale", 0.01, 0.50, 0.10, step=0.01)
+            scales = {'N': sc_n, 'V': sc_v, 'M': sc_m}
             
-            img_buf = plot_sap2000_diagrams(nodes, elements, scales, inc_sec, base_sec)
-            st.image(img_buf, use_container_width=True)
-            
-            max_M_inc, max_V_inc = 0, 0
-            max_M_base, max_V_base = 0, 0
-            
-            for el in elements:
-                if el['type'] == 'frame':
-                    max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][1]))
-                    max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][1]))
-                    if el['group'] == 'inclined':
-                        max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
-                    elif el['group'] == 'base':
-                        max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
-            
-            struts_results = []
-            for el in elements:
-                if el['type'] == 'truss':
-                    struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
+        img_buf = plot_sap2000_diagrams(fea_data['nodes'], fea_data['elements'], fea_data['R'], scales, fea_data['sys_data']['inc_sec'], fea_data['sys_data']['base_sec'])
+        st.image(img_buf, use_container_width=True)
+        
+        max_M_inc, max_V_inc = 0, 0
+        max_M_base, max_V_base = 0, 0
+        
+        for el in fea_data['elements']:
+            if el['type'] == 'frame':
+                max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
+                if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
+                max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
+                if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
                 
-            sys_data = {
-                'L_tot': L_tot,
-                'angle': angle_deg,
-                'inc_sec': inc_sec,
-                'base_sec': base_sec,
-                'max_M_inc': max_M_inc,
-                'max_V_inc': max_V_inc,
-                'max_M_base': max_M_base,
-                'max_V_base': max_V_base,
-                'struts_res': struts_results,
-                'img_bytes': img_buf
-            }
+                if el['group'] == 'inclined':
+                    max_M_inc = max(max_M_inc, max_M); max_V_inc = max(max_V_inc, max_V)
+                elif el['group'] == 'base':
+                    max_M_base = max(max_M_base, max_M); max_V_base = max(max_V_base, max_V)
+        
+        struts_results = []
+        for el in fea_data['elements']:
+            if el['type'] == 'truss':
+                struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
             
-            docx_out = generate_inclined_report(sys_data)
-            
-            st.success("✅ SAP2000-Style Analysis Complete!")
-            st.download_button("⬇️ Download Inclined System Calculation Sheet", 
-                               data=docx_out.getvalue(), 
-                               file_name="Inclined_System_Report.docx", 
-                               mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        fea_data['sys_data'].update({
+            'max_M_inc': max_M_inc, 'max_V_inc': max_V_inc,
+            'max_M_base': max_M_base, 'max_V_base': max_V_base,
+            'struts_res': struts_results,
+            'img_bytes': img_buf
+        })
+        
+        docx_out = generate_inclined_report(fea_data['sys_data'])
+        
+        st.success("✅ SAP2000-Style Analysis Complete!")
+        st.download_button("⬇️ Download Inclined System Calculation Sheet", 
+                           data=docx_out.getvalue(), 
+                           file_name="Inclined_System_Report.docx", 
+                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
