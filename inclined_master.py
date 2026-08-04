@@ -17,7 +17,10 @@ except ImportError:
     SECTIONS_DB = {}
     STRUTS_DB = {}
 
-def solve_inclined_fea(nodes, elements, gravity_loads):
+# =========================================================
+# 1. Advanced 2D Frame FEA Solver for Inclined Systems
+# =========================================================
+def solve_inclined_fea(nodes, elements, applied_loads):
     num_nodes = len(nodes)
     NDOF = num_nodes * 3
     K = np.zeros((NDOF, NDOF))
@@ -34,13 +37,12 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
         c, s = (x2 - x1) / L, (y2 - y1) / L
         el['L'], el['c'], el['s'] = L, c, s
         
-        # 💡 توحيد ذكي للوحدات لضمان الدقة بغض النظر عن الداتابيز
         E_raw = el.get('E', 210000000.0)
-        E = E_raw if E_raw > 1000000 else E_raw * 10000.0 # Convert kN/cm2 to kN/m2
+        E = E_raw if E_raw > 1000000 else E_raw * 10000.0 
         A_raw = el.get('A', 0.00343)
-        A = A_raw if A_raw < 0.1 else A_raw / 10000.0 # Convert cm2 to m2
+        A = A_raw if A_raw < 0.1 else A_raw / 10000.0 
         I_raw = el.get('I', 0.00000122)
-        I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 # Convert cm4 to m4
+        I = I_raw if I_raw < 0.001 else I_raw / 100000000.0 
         
         T = np.array([
             [c, s, 0, 0, 0, 0], [-s, c, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0],
@@ -68,14 +70,19 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
             for col in range(6):
                 K[dof_idx[r], dof_idx[col]] += k_glob[r, col]
                 
-    for gl in gravity_loads:
+    for gl in applied_loads:
         el_idx = gl['mem_idx']
-        W_gravity = gl['W'] 
+        W_val = gl['W'] 
+        ld_dir = gl['dir']
         el = elements[el_idx]
         L, c, s = el['L'], el['c'], el['s']
         
-        p_x = -W_gravity * s
-        p_y = -W_gravity * c
+        if ld_dir == 'Gravity (Vertical ↓)':
+            p_x = -W_val * s
+            p_y = -W_val * c
+        else: # Perpendicular
+            p_x = 0.0
+            p_y = -W_val
         
         f_eq_loc = np.array([
             p_x * L / 2.0,
@@ -148,11 +155,16 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
             ])
             
             p_x, p_y = 0, 0
-            for gl in gravity_loads:
+            for gl in applied_loads:
                 if elements[gl['mem_idx']] == el:
-                    W_gravity = gl['W']
-                    p_x = -W_gravity * s
-                    p_y = -W_gravity * c
+                    W_val = gl['W']
+                    ld_dir = gl['dir']
+                    if ld_dir == 'Gravity (Vertical ↓)':
+                        p_x = -W_val * s
+                        p_y = -W_val * c
+                    else:
+                        p_x = 0.0
+                        p_y = -W_val
                     
             f_fixed_loc = np.array([
                 -p_x * L / 2.0,
@@ -173,6 +185,54 @@ def solve_inclined_fea(nodes, elements, gravity_loads):
             el['internal'] = {'N': N_arr, 'V': V_arr, 'M': M_arr, 'x': xs}
             
     return U, R_reactions, nodes, elements
+
+# =========================================================
+# 2. Engines for Plotting (Live Preview & Full Results)
+# =========================================================
+def plot_live_geometry(nodes, elements, applied_loads):
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.set_aspect('equal', adjustable='datalim')
+    ax.grid(True, linestyle=':', alpha=0.5)
+
+    for i, n in enumerate(nodes):
+        x, y = n[0], n[1]
+        if n[2] and n[3]: 
+            ax.plot(x, y, marker='^', color='orange', markersize=15, zorder=5)
+        elif not n[2] and n[3]: 
+            ax.plot(x, y, marker='o', color='green', markersize=12, zorder=5)
+
+    for idx, el in enumerate(elements):
+        n1, n2 = nodes[el['n1']], nodes[el['n2']]
+        color = 'blue' if el['type'] == 'frame' else 'red'
+        style = '-' if el['type'] == 'frame' else '--'
+        lw = 4 if el['type'] == 'frame' else 2
+        ax.plot([n1[0], n2[0]], [n1[1], n2[1]], color=color, linestyle=style, linewidth=lw)
+
+        for ld in applied_loads:
+            if ld['mem_idx'] == idx:
+                W = ld['W']
+                dir_type = ld['dir']
+                L, c, s = el['L'], el['c'], el['s']
+                xs = np.linspace(0, L, 6)
+                for x_dist in xs:
+                    px = n1[0] + c * x_dist
+                    py = n1[1] + s * x_dist
+                    if dir_type == 'Gravity (Vertical ↓)':
+                        ax.arrow(px, py + 1.5, 0, -1.0, head_width=0.15, head_length=0.2, fc='magenta', ec='magenta', zorder=4)
+                    else:
+                        ax.arrow(px - s*1.5, py + c*1.5, s*1.0, -c*1.0, head_width=0.15, head_length=0.2, fc='magenta', ec='magenta', zorder=4)
+                
+                mid_x = n1[0] + c * (L/2)
+                mid_y = n1[1] + s * (L/2)
+                ax.text(mid_x - s*2.0, mid_y + c*2.0, f"{W} kN/m\n({dir_type.split()[0]})", color='magenta', fontweight='bold', ha='center')
+
+    plt.title("Live Geometry & Assigned Load Diagram", fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    img_buf = io.BytesIO()
+    plt.savefig(img_buf, format='png', dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    img_buf.seek(0)
+    return img_buf
 
 def plot_inclined_system(nodes, elements, R_reactions):
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -267,6 +327,9 @@ def plot_inclined_system(nodes, elements, R_reactions):
     img_buf.seek(0)
     return img_buf
 
+# =========================================================
+# 3. Report Generator for Inclined Systems
+# =========================================================
 def generate_inclined_report(sys_data):
     if os.path.exists("Acrow_Template.docx"):
         doc = Document("Acrow_Template.docx")
@@ -306,7 +369,7 @@ def generate_inclined_report(sys_data):
     add_line(f"1. Geometry & Inputs:", bold=True)
     add_line(f"- Inclined Soldier Length = {sys_data['L_tot']:.2f} m")
     add_line(f"- Inclination Angle = {sys_data['angle']:.1f} degrees")
-    add_line(f"- Total Gravity Load (W) = {sys_data['W']:.2f} kN/m")
+    add_line(f"- Total Assinged Load (W) = {sys_data['W']:.2f} kN/m [{sys_data['ld_dir']}]")
     
     doc.add_paragraph()
     add_line(f"2. Safety Checks:", bold=True)
@@ -337,17 +400,22 @@ def generate_inclined_report(sys_data):
     doc.save(out)
     return out
 
+# =========================================================
+# 4. Main UI Module for Inclined Systems
+# =========================================================
 def render_inclined_module():
     st.markdown("## 📐 Inclined Formwork System (Advanced 2D Frame)")
-    st.info("💡 **Independent Module:** This system solves inclined setups with Roller & Hinged supports, computing Gravity Loads precisely without affecting standard modules.")
+    st.info("💡 **Live Geometry Module:** Configure the system below. The Assigned Load Diagram will update in real-time. Click Run to solve the 2D Frame.")
     
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         angle_deg = st.number_input("Inclination Angle (Degrees, < 90)", value=60.0, step=5.0)
         angle_rad = np.radians(angle_deg)
     with c2:
-        W_load = st.number_input("Vertical Gravity Load (kN/m)", value=15.0, step=1.0)
+        W_load = st.number_input("Design Load W (kN/m)", value=15.0, step=1.0)
     with c3:
+        ld_dir = st.selectbox("Load Direction", ["Gravity (Vertical ↓)", "Perpendicular (Local ↘)"])
+    with c4:
         num_struts = st.number_input("Number of Push-Pulls", min_value=1, max_value=5, value=2, step=1)
         
     st.markdown("---")
@@ -378,73 +446,81 @@ def render_inclined_module():
         st.success(f"Total Base Length = {X_tot:.2f} m")
         
     st.markdown("---")
+    
+    # 💡 بناء المنظومة اللحظية للرسم التفاعلي (يتم تنفيذها فوراً خارج زر Run)
+    nodes = []
+    nodes.append([0.0, 0.0, False, True, False]) 
+    
+    L_cum = 0.0
+    inc_node_indices = [0]
+    for L_seg in L_segs:
+        L_cum += L_seg
+        x, y = L_cum * np.cos(angle_rad), L_cum * np.sin(angle_rad)
+        nodes.append([x, y, False, False, False])
+        inc_node_indices.append(len(nodes)-1)
+    
+    if L_rem > 0:
+        L_cum += L_rem
+        x, y = L_cum * np.cos(angle_rad), L_cum * np.sin(angle_rad)
+        nodes.append([x, y, False, False, False])
+        inc_node_indices.append(len(nodes)-1)
+        
+    X_cum = 0.0
+    base_node_indices = [0]
+    for X_seg in X_segs:
+        X_cum += X_seg
+        nodes.append([X_cum, 0.0, True, True, False])
+        base_node_indices.append(len(nodes)-1)
+        
+    if X_rem > 0:
+        X_cum += X_rem
+        nodes.append([X_cum, 0.0, False, False, False]) 
+        base_node_indices.append(len(nodes)-1)
+        
+    elements = []
+    applied_loads = []
+    E_st = 210000000.0 
+    
+    inc_props = SECTIONS_DB.get(inc_sec, {'E': E_st, 'A': 0.00343, 'I': 0.00000122})
+    for j in range(len(inc_node_indices)-1):
+        elements.append({
+            'type': 'frame', 'sec': inc_sec,
+            'n1': inc_node_indices[j], 'n2': inc_node_indices[j+1],
+            'E': inc_props.get('E', E_st), 'A': inc_props.get('A', 0.00343), 'I': inc_props.get('I', 0.00000122)
+        })
+        applied_loads.append({'mem_idx': len(elements)-1, 'W': W_load, 'dir': ld_dir})
+        
+    base_props = SECTIONS_DB.get(base_sec, {'E': E_st, 'A': 0.00343, 'I': 0.00000122})
+    for j in range(len(base_node_indices)-1):
+        elements.append({
+            'type': 'frame', 'sec': base_sec,
+            'n1': base_node_indices[j], 'n2': base_node_indices[j+1],
+            'E': base_props.get('E', E_st), 'A': base_props.get('A', 0.00343), 'I': base_props.get('I', 0.00000122)
+        })
+        
+    struts_results_placeholder = []
+    for j in range(int(num_struts)):
+        n_inc = inc_node_indices[j+1]
+        n_base = base_node_indices[j+1]
+        st_type = strut_types[j]
+        st_props = STRUTS_DB.get(st_type, {'A': 0.001}) 
+        elements.append({
+            'type': 'truss', 'sec': st_type,
+            'n1': n_base, 'n2': n_inc,
+            'E': E_st, 'A': st_props.get('A', 0.001)
+        })
+        struts_results_placeholder.append({'idx': len(elements)-1, 'type': st_type})
+
+    # 💡 عرض الرسمة اللحظية (تتحدث مع كل تعديل يقوم به المهندس)
+    live_img_buf = plot_live_geometry(nodes, elements, applied_loads)
+    st.image(live_img_buf, use_container_width=True)
+
+    st.markdown("---")
+    
+    # 💡 إجراء الحسابات واستخراج النوتة
     if st.button("🚀 Run Advanced FEA & Generate Report", type="primary", use_container_width=True):
         with st.spinner("Building Stiffness Matrix & Solving..."):
-            
-            nodes = []
-            nodes.append([0.0, 0.0, False, True, False]) 
-            
-            L_cum = 0.0
-            inc_node_indices = [0]
-            for L_seg in L_segs:
-                L_cum += L_seg
-                x, y = L_cum * np.cos(angle_rad), L_cum * np.sin(angle_rad)
-                nodes.append([x, y, False, False, False])
-                inc_node_indices.append(len(nodes)-1)
-            
-            if L_rem > 0:
-                L_cum += L_rem
-                x, y = L_cum * np.cos(angle_rad), L_cum * np.sin(angle_rad)
-                nodes.append([x, y, False, False, False])
-                inc_node_indices.append(len(nodes)-1)
-                
-            X_cum = 0.0
-            base_node_indices = [0]
-            for X_seg in X_segs:
-                X_cum += X_seg
-                nodes.append([X_cum, 0.0, True, True, False])
-                base_node_indices.append(len(nodes)-1)
-                
-            if X_rem > 0:
-                X_cum += X_rem
-                nodes.append([X_cum, 0.0, False, False, False]) 
-                base_node_indices.append(len(nodes)-1)
-                
-            elements = []
-            gravity_loads = []
-            E_st = 210000000.0 
-            
-            inc_props = SECTIONS_DB.get(inc_sec, {'E': E_st, 'A': 0.00343, 'I': 0.00000122})
-            for j in range(len(inc_node_indices)-1):
-                elements.append({
-                    'type': 'frame', 'sec': inc_sec,
-                    'n1': inc_node_indices[j], 'n2': inc_node_indices[j+1],
-                    'E': inc_props.get('E', E_st), 'A': inc_props.get('A', 0.00343), 'I': inc_props.get('I', 0.00000122)
-                })
-                gravity_loads.append({'mem_idx': len(elements)-1, 'W': W_load})
-                
-            base_props = SECTIONS_DB.get(base_sec, {'E': E_st, 'A': 0.00343, 'I': 0.00000122})
-            for j in range(len(base_node_indices)-1):
-                elements.append({
-                    'type': 'frame', 'sec': base_sec,
-                    'n1': base_node_indices[j], 'n2': base_node_indices[j+1],
-                    'E': base_props.get('E', E_st), 'A': base_props.get('A', 0.00343), 'I': base_props.get('I', 0.00000122)
-                })
-                
-            struts_results_placeholder = []
-            for j in range(int(num_struts)):
-                n_inc = inc_node_indices[j+1]
-                n_base = base_node_indices[j+1]
-                st_type = strut_types[j]
-                st_props = STRUTS_DB.get(st_type, {'A': 0.001}) 
-                elements.append({
-                    'type': 'truss', 'sec': st_type,
-                    'n1': n_base, 'n2': n_inc,
-                    'E': E_st, 'A': st_props.get('A', 0.001)
-                })
-                struts_results_placeholder.append({'idx': len(elements)-1, 'type': st_type})
-                
-            U, R, final_nodes, final_elements = solve_inclined_fea(nodes, elements, gravity_loads)
+            U, R, final_nodes, final_elements = solve_inclined_fea(nodes, elements, applied_loads)
             
             img_buf = plot_inclined_system(final_nodes, final_elements, R)
             st.image(img_buf, use_container_width=True)
@@ -469,6 +545,7 @@ def render_inclined_module():
                 'L_tot': L_tot,
                 'angle': angle_deg,
                 'W': W_load,
+                'ld_dir': ld_dir,
                 'inc_sec': inc_sec,
                 'base_sec': base_sec,
                 'max_M_inc': max_M_inc,
