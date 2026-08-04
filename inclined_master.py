@@ -59,6 +59,10 @@ def apply_plot_styles():
     mpl.rcParams['font.size'] = 7
     mpl.rcParams['font.weight'] = 'normal'
 
+# 💡 دالة لتنظيف أسماء القطاعات وإزالة الأقواس (Range)
+def get_short_name(sec_name):
+    return re.sub(r'\s*\(.*?\)', '', sec_name).strip()
+
 # =========================================================
 # 1. Geometry & Mesh Generator
 # =========================================================
@@ -388,6 +392,7 @@ def get_img_buf(fig):
     buf.seek(0)
     return buf
 
+# 💡 دالة متخصصة لرسم الركائز بشكل هندسي دقيق (SAP2000 Style)
 def draw_base_geometry(ax, nodes, elements, supports_list):
     for el in elements:
         n1, n2 = nodes[el['n1']], nodes[el['n2']]
@@ -434,16 +439,17 @@ def draw_base_geometry(ax, nodes, elements, supports_list):
             lx2, ly2 = x + base_dist*nx + line_w*tx, y + base_dist*ny + line_w*ty
             ax.plot([lx1, lx2], [ly1, ly2], color='green', lw=1.5, zorder=4)
 
+# 💡 دالة متخصصة لرسم أسماء القطاعات بدون تكرار
 def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, base_sec, is_n_diagram=False):
     angle_rad = np.radians(angle_deg)
     c_ang, s_ang = np.cos(angle_rad), np.sin(angle_rad)
     
     inc_mid_x = (L_tot/2) * c_ang
     inc_mid_y = (L_tot/2) * s_ang
-    ax.text(inc_mid_x - s_ang*0.6, inc_mid_y + c_ang*0.6, inc_sec, color='gray', fontsize=7, alpha=0.9, ha='center', va='center', rotation=angle_deg, fontname='Arial')
+    ax.text(inc_mid_x - s_ang*0.15, inc_mid_y + c_ang*0.15, get_short_name(inc_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', rotation=angle_deg, fontname='Arial')
     
     base_mid_x = X_tot/2
-    ax.text(base_mid_x, -0.6, base_sec, color='gray', fontsize=7, alpha=0.9, ha='center', va='center', fontname='Arial')
+    ax.text(base_mid_x, -0.2, get_short_name(base_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', fontname='Arial')
     
     drawn_struts = set()
     for el in elements:
@@ -458,10 +464,24 @@ def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, ba
                 rot = np.degrees(np.arctan2(dy, dx))
                 
                 if is_n_diagram:
-                    ax.text(mid_x - nx*0.4, mid_y - ny*0.4, el['sec'], color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
+                    ax.text(mid_x - nx*0.3, mid_y - ny*0.3, get_short_name(el['sec']), color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
                 else:
-                    ax.text(mid_x + nx*0.2, mid_y + ny*0.2, el['sec'], color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
+                    ax.text(mid_x + nx*0.15, mid_y + ny*0.15, get_short_name(el['sec']), color='gray', fontsize=6, alpha=0.9, ha='center', va='center', rotation=rot, fontname='Arial')
                 drawn_struts.add(sig)
+
+# 💡 دالة مساعدة لرسم سهم رد الفعل بشكل دقيق
+def draw_reaction_arrow(ax, node_x, node_y, force_mag, axis_nx, axis_ny):
+    if abs(force_mag) < 0.1: return
+    arr_L = 0.8
+    sgn = np.sign(force_mag)
+    dx = sgn * axis_nx
+    dy = sgn * axis_ny
+    start_x = node_x - arr_L * dx
+    start_y = node_y - arr_L * dy
+    ax.arrow(start_x, start_y, arr_L*dx, arr_L*dy, length_includes_head=True, 
+             head_width=0.15, head_length=0.2, fc='purple', ec='purple', lw=1.0, zorder=5)
+    ax.text(start_x - 0.25*dx, start_y - 0.25*dy, f"{abs(force_mag):.1f}", 
+            color='purple', fontsize=7, fontname='Arial', ha='center', va='center')
 
 def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg, inc_sec, base_sec, L_tot, X_tot, supports_list):
     apply_plot_styles()
@@ -479,14 +499,14 @@ def plot_live_geometry(nodes, elements, applied_loads, L_segs, X_segs, angle_deg
     for i, seg in enumerate(L_segs):
         px = (curr_l + seg/2) * c_ang
         py = (curr_l + seg/2) * s_ang
-        ax.text(px - s_ang*0.9, py + c_ang*0.9, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center', fontname='Arial')
+        ax.text(px - s_ang*0.6, py + c_ang*0.6, f"L{i+1}={seg:.2f}m", color='gray', fontsize=7, rotation=angle_deg, ha='center', va='center', fontname='Arial')
         curr_l += seg
         
     curr_x = 0.0
     for i, seg in enumerate(X_segs):
         px = curr_x + seg/2
         py = 0.0
-        ax.text(px, py - 0.9, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center', fontname='Arial')
+        ax.text(px, py - 0.6, f"X{i+1}={seg:.2f}m", color='gray', fontsize=7, ha='center', va='center', fontname='Arial')
         curr_x += seg
 
     if applied_loads:
@@ -621,29 +641,18 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
         a = sup['angle']
         
         Rx, Ry = R_reactions[3*n], R_reactions[3*n+1]
-        
         rad = np.radians(a)
         c_a, s_a = np.cos(rad), np.sin(rad)
         
         R_u = Rx * c_a + Ry * s_a
         R_v = -Rx * s_a + Ry * c_a
-        
         x, y = nodes[n][0], nodes[n][1]
         
         if t == 'Roller':
-            if abs(R_v) > 0.1:
-                norm_x, norm_y = -s_a, c_a
-                ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*norm_x*np.sign(R_v), y - 0.7*norm_y*np.sign(R_v)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
-                ax_react.text(x - 0.9*norm_x*np.sign(R_v), y - 0.9*norm_y*np.sign(R_v), f"{abs(R_v):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+            draw_reaction_arrow(ax_react, x, y, R_v, -s_a, c_a)
         else:
-            if abs(R_u) > 0.1:
-                dir_x, dir_y = c_a, s_a
-                ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*dir_x*np.sign(R_u), y - 0.7*dir_y*np.sign(R_u)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
-                ax_react.text(x - 0.9*dir_x*np.sign(R_u), y - 0.9*dir_y*np.sign(R_u), f"{abs(R_u):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
-            if abs(R_v) > 0.1:
-                norm_x, norm_y = -s_a, c_a
-                ax_react.annotate("", xy=(x, y), xytext=(x - 0.7*norm_x*np.sign(R_v), y - 0.7*norm_y*np.sign(R_v)), arrowprops=dict(color='purple', width=0.5, headwidth=4, headlength=4))
-                ax_react.text(x - 0.9*norm_x*np.sign(R_v), y - 0.9*norm_y*np.sign(R_v), f"{abs(R_v):.1f}", color='purple', fontname='Arial', fontsize=8, ha='center', va='center')
+            draw_reaction_arrow(ax_react, x, y, R_u, c_a, s_a)
+            draw_reaction_arrow(ax_react, x, y, R_v, -s_a, c_a)
                 
     figs_dict['React'] = get_img_buf(fig_react)
 
