@@ -28,6 +28,58 @@ def get_shoring_capacity(t_nm, subtype, unb, req_ext):
         t_al = get_prop_allowable(subtype, req_ext, True)
     return t_al
 
+def plot_zone_system(conf):
+    results = []
+    W_attacking = conf['W_fresh']
+    results.append({'level': 'Fresh Slab', 'attacking': W_attacking, 'capacity': 0, 'transferred': W_attacking})
+    
+    current_P = W_attacking
+    for i, slab in enumerate(conf['existing_slabs']):
+        if current_P <= 0: break
+        avail_cap = (slab['sidl'] + slab['ll']) * (slab['strength'] / 100.0)
+        absorbed = min(current_P, avail_cap)
+        current_P = max(0, current_P - avail_cap)
+        
+        results.append({
+            'level': f'Existing Slab {i+1}', 
+            'attacking': results[-1]['transferred'], 
+            'capacity': avail_cap, 
+            'transferred': current_P
+        })
+        
+    num_levels = len(results)
+    fig, ax = plt.subplots(figsize=(8, num_levels * 1.5))
+    
+    y_pos = np.arange(num_levels, 0, -1) * 2
+    
+    for i, res in enumerate(results):
+        y = y_pos[i]
+        color = 'gray' if 'Existing' in res['level'] else 'blue'
+        rect = plt.Rectangle((1, y-0.2), 6, 0.4, facecolor=color, alpha=0.5, edgecolor='black', linewidth=2)
+        ax.add_patch(rect)
+        ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
+        
+        if i < num_levels - 1 and res['transferred'] > 0:
+            next_y = y_pos[i+1]
+            ax.annotate('', xy=(4, next_y+0.2), xytext=(4, y-0.2),
+                        arrowprops=dict(facecolor='red', shrink=0.05, width=4, headwidth=10))
+            ax.text(4.2, (y + next_y)/2, f"{res['transferred']:.2f} kN/m²", color='red', fontsize=11, fontweight='bold')
+            
+            ax.plot([2.5, 2.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
+            ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
+            
+    ax.set_xlim(0, 8)
+    ax.set_ylim(0, max(y_pos) + 1)
+    ax.axis('off')
+    plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    img_buf = io.BytesIO()
+    plt.savefig(img_buf, format='png', dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    img_buf.seek(0)
+    return img_buf
+
 def generate_backprop_report(configs, ref_code):
     if os.path.exists("Acrow_Template.docx"):
         doc = Document("Acrow_Template.docx")
@@ -37,7 +89,7 @@ def generate_backprop_report(configs, ref_code):
         
     def add_p(text, bold=False, underline=False, color=None, size=12, indent=0):
         p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT  # 💡 الإجبار التام على المحاذاة لليسار
         p.paragraph_format.line_spacing = 1.5
         if indent > 0:
             p.paragraph_format.left_indent = Cm(indent)
@@ -51,14 +103,14 @@ def generate_backprop_report(configs, ref_code):
         return p
 
     p_title = doc.add_paragraph()
-    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام
     run_title = p_title.add_run("CALCULATION SHEET FOR RE-PROPPING (BACK-PROPPING)")
     run_title.font.name = 'Arial'
     run_title.font.size = Pt(16)
     run_title.font.bold = True
     
     p_code = doc.add_paragraph()
-    p_code.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_code.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام
     r_code = p_code.add_run("="*50 + f"\nCode Reference: {ref_code}")
     r_code.font.name = 'Arial'
     r_code.font.bold = True
@@ -76,7 +128,8 @@ def generate_backprop_report(configs, ref_code):
         add_p("B. Live load:", indent=1)
         add_p(f"-  Live load = {conf['LL']:.2f} KN/m²", indent=2)
         
-        add_p("\nLoad Acting on \"1st Level Slabs\" while Casting Level \"2nd Slabs\".", bold=True, underline=True)
+        # 💡 تم التعديل كما ورد بخط اليد باللون الأحمر تماماً
+        add_p("\nLoad Acting on Existing Lower Slabs while Casting of Fresh Concrete Slabs.", bold=True, underline=True)
         add_p(f"-  Slabs: {conf['ts_fresh'] * 1000:.0f} mm.", indent=1)
         
         W_slab_str = f"W Slab (KN/m²) = O.W of Slab + Live Load + O.W of Formwork"
@@ -84,31 +137,11 @@ def generate_backprop_report(configs, ref_code):
         calc_str = f"               = {conf['gamma_c']:.1f}X{conf['ts_fresh']:.2f} + {conf['LL']:.2f} + {conf['FW']:.2f} = {conf['W_fresh']:.2f} KN/m²"
         add_p(calc_str, bold=True, indent=1)
 
-        # ---------------- Check Level 1 (Under Fresh Slab) ----------------
-        add_p("\nRe-Shoring Check for the System loaded on Existing Slab 1 (Props directly under Fresh Slab)", bold=True)
-        add_p(f"➢ Total Re-Shoring Loads from upper level = {conf['W_fresh']:.2f} KN/m²", indent=1)
+        # 💡 تم إلغاء الشيك الذي يسبق إدخال البلاطة بناءً على علامة (X) الحمراء
         
-        grid_1 = conf['level_1_shore']
-        add_p(f"Therefore; -", bold=True)
-        add_p(f"Max. Loaded Area \"Back Propped area at 1st Level\" = {grid_1['gx']:.2f}x{grid_1['gy']:.2f} = {grid_1['area']:.2f} m²", indent=1)
-        load_leg_1 = grid_1['area'] * conf['W_fresh']
-        
-        check_txt = f"Area Load on one leg of {grid_1['sys']} = {grid_1['area']:.2f} x {conf['W_fresh']:.2f} = {load_leg_1:.2f} KN < {grid_1['cap']:.2f} KN"
-        p_check = doc.add_paragraph()
-        p_check.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        p_check.paragraph_format.line_spacing = 1.5
-        p_check.paragraph_format.left_indent = Cm(1)
-        r_c1 = p_check.add_run(check_txt)
-        r_c1.font.name = 'Arial'
-        r_c1.font.size = Pt(12)
-        r_res = p_check.add_run("   SAFE" if load_leg_1 <= grid_1['cap'] else "   UNSAFE")
-        r_res.font.name = 'Arial'
-        r_res.font.size = Pt(12)
-        r_res.font.bold = True
-        r_res.font.color.rgb = RGBColor(0, 128, 0) if load_leg_1 <= grid_1['cap'] else RGBColor(255, 0, 0)
-
         # ---------------- Iterate Existing Slabs ----------------
         current_transferred = conf['W_fresh']
+        
         for i, slab in enumerate(conf['existing_slabs']):
             if current_transferred <= 0: break
             
@@ -122,7 +155,7 @@ def generate_backprop_report(configs, ref_code):
             capacity = unfactored * (slab['strength'] / 100.0)
             add_p(f"Therefore: - Total resisting load = {unfactored:.2f} x {slab['strength']/100:.2f} = {capacity:.2f} KN/m²")
             
-            add_p(f"\nRe-Shoring Check for the System loaded on Existing Slab {i+2}", bold=True)
+            add_p(f"\nRe-Shoring Check for the System loaded on Existing Slab {i+1}", bold=True)
             add_p(f"➢ Total Re-Shoring Loads from upper level = {current_transferred:.2f} KN/m²", indent=1)
             
             next_transferred = max(0, current_transferred - capacity)
@@ -131,12 +164,12 @@ def generate_backprop_report(configs, ref_code):
             
             if next_transferred > 0:
                 grid_i = slab['shore']
-                add_p(f"Max. Loaded Area \"Back Propped area at Level {i+2}\" = {grid_i['gx']:.2f}x{grid_i['gy']:.2f} = {grid_i['area']:.2f} m²", indent=1)
+                add_p(f"Max. Loaded Area \"Back Propped area at Level {i+1}\" = {grid_i['gx']:.2f}x{grid_i['gy']:.2f} = {grid_i['area']:.2f} m²", indent=1)
                 load_leg_i = grid_i['area'] * next_transferred
                 
                 check_txt_i = f"Area Load on one leg of {grid_i['sys']} = {grid_i['area']:.2f} x {next_transferred:.2f} = {load_leg_i:.2f} KN < {grid_i['cap']:.2f} KN"
                 p_check_i = doc.add_paragraph()
-                p_check_i.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p_check_i.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام لليسار
                 p_check_i.paragraph_format.line_spacing = 1.5
                 p_check_i.paragraph_format.left_indent = Cm(1)
                 r_ci = p_check_i.add_run(check_txt_i)
@@ -149,6 +182,23 @@ def generate_backprop_report(configs, ref_code):
                 r_resi.font.color.rgb = RGBColor(0, 128, 0) if load_leg_i <= grid_i['cap'] else RGBColor(255, 0, 0)
                 
             current_transferred = next_transferred
+
+        # 💡 ---------------- خلاصة عدد الأدوار ----------------
+        levels_propped = conf['levels_propped']
+        add_p("\n=======================================================", bold=True)
+        add_p(f"FINAL CONCLUSION FOR ZONE {z_idx+1}:", bold=True, color=RGBColor(0, 128, 0))
+        add_p(f"Total Number of Floors Required to be Propped = {levels_propped} Floors", bold=True)
+        
+        if levels_propped == 1:
+            add_p("(This means ONLY the main shoring under the fresh slab is needed. The first existing slab can safely carry the transferred load, and NO back-propping is required underneath it.)", color=RGBColor(100,100,100))
+        else:
+            add_p(f"(This includes 1 floor of main shoring directly under the fresh slab, plus {levels_propped - 1} floor(s) of back-propping underneath the existing slabs.)", color=RGBColor(100,100,100))
+        add_p("=======================================================\n", bold=True)
+
+        add_p("Load Path Diagram:", bold=True)
+        p_img = doc.add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.LEFT # 💡 الإجبار التام لليسار
+        p_img.add_run().add_picture(io.BytesIO(conf['img_buf'].read()), width=Cm(12.0))
             
     out = io.BytesIO()
     doc.save(out)
@@ -156,7 +206,7 @@ def generate_backprop_report(configs, ref_code):
 
 def render_backprop_module(ref_code):
     st.markdown("## 🏗️ Multi-Zone Slab Re-propping (Back-propping)")
-    st.info("💡 **Independent Module:** Evaluate multiple independent zones of fresh slabs. Each floor can have a distinct shoring grid and system.")
+    st.info("💡 **Independent Module:** Evaluate multiple independent zones. Detailed outputs are strictly aligned to the left with 1.5 line spacing.")
     
     LL_const = 1.50 if "BS" in ref_code else 2.40
     FW_load = 0.50
@@ -176,31 +226,6 @@ def render_backprop_module(ref_code):
             ts_fresh = c2.number_input("Fresh Slab Thickness (m)", value=0.28, step=0.01, key=f'ts_{idx}')
             W_fresh = (gamma_c * ts_fresh) + LL_const + FW_load
             st.info(f"**Total Fresh Slab Load = {W_fresh:.2f} kN/m²**")
-            
-            st.markdown("#### Level 1 Shoring (Props Directly Under Fresh Slab)")
-            sc1, sc2, sc3 = st.columns(3)
-            sys_1 = sc1.selectbox("Shoring Type", sys_opts, key=f's1_{idx}')
-            gx_1 = sc2.number_input("Grid X (m)", value=1.0, step=0.1, key=f'gx1_{idx}')
-            gy_1 = sc3.number_input("Grid Y (m)", value=1.2, step=0.1, key=f'gy1_{idx}')
-            
-            subtype_1, unb_1, ext_1 = "", 1.5, 3.0
-            if sys_1 == "Cup-lock":
-                subtype_1 = sc1.selectbox("Grade", ["S355 (st.52)", "S235"], key=f'c1_{idx}')
-                unb_1 = sc2.number_input("Unbraced (m)", value=1.5, key=f'cu1_{idx}')
-            elif sys_1 == "Ring-lock":
-                subtype_1 = sc1.selectbox("Size", ["Ringlock 1.5\"", "Ringlock 2.0\""], key=f'r1_{idx}')
-                unb_1 = sc2.number_input("Unbraced (m)", value=1.5, key=f'ru1_{idx}')
-            elif sys_1 == "Acrow Prop":
-                try: 
-                    from config import PROP_DB
-                    subtype_1 = sc1.selectbox("Prop Type", list(PROP_DB.keys()), key=f'p1_{idx}')
-                except: subtype_1 = "Prop No.2"
-                ext_1 = sc2.number_input("Extension (m)", value=3.0, key=f'pe1_{idx}')
-            
-            cap_1 = get_shoring_capacity(sys_1, subtype_1, unb_1, ext_1)
-            st.caption(f"Leg Capacity = {cap_1:.2f} kN | Load on Leg = {(gx_1*gy_1*W_fresh):.2f} kN")
-            
-            level_1_shore = {'sys': sys_1, 'gx': gx_1, 'gy': gy_1, 'area': gx_1*gy_1, 'cap': cap_1}
             
             st.markdown("---")
             num_exist = st.number_input("Number of Existing Slabs Below", 1, 5, 2, key=f'nx_{idx}')
@@ -242,13 +267,33 @@ def render_backprop_module(ref_code):
                 
             configs.append({
                 'gamma_c': gamma_c, 'ts_fresh': ts_fresh, 'LL': LL_const, 'FW': FW_load, 'W_fresh': W_fresh,
-                'level_1_shore': level_1_shore, 'existing_slabs': existing_slabs
+                'existing_slabs': existing_slabs
             })
             
     st.markdown("---")
     if st.button("🚀 Calculate & Generate Detailed Left-Aligned Report", type="primary", use_container_width=True):
+        
+        # 💡 حلقة ذكية لحساب عدد الأدوار المطلوبة للصلب قبل الطباعة
+        for idx, conf in enumerate(configs):
+            current_transferred = conf['W_fresh']
+            levels_propped = 1 # أساسي: يجب صلب الدور الذي تحت البلاطة الفريش
+            
+            for slab in conf['existing_slabs']:
+                if current_transferred <= 0: break
+                capacity = (slab['sidl'] + slab['ll']) * (slab['strength'] / 100.0)
+                next_transferred = max(0, current_transferred - capacity)
+                if next_transferred > 0:
+                    levels_propped += 1
+                current_transferred = next_transferred
+                
+            conf['levels_propped'] = levels_propped
+            conf['img_buf'] = plot_zone_system(conf)
+            
+            # إظهار رسالة واضحة جداً للمستخدم في الشاشة
+            st.success(f"✅ **Zone {idx+1} Summary:** You need to prop **{levels_propped} Floors** in total. (1 Floor Main Shoring + {levels_propped-1} Floors Back-propping).")
+            st.image(conf['img_buf'], use_container_width=False)
+            
         docx_out = generate_backprop_report(configs, ref_code)
-        st.success("✅ Multi-Zone Analysis Complete! Calculation Sheet generated successfully.")
         st.download_button("⬇️ Download Back-propping Calculation Sheet", 
                            data=docx_out.getvalue(), 
                            file_name="Back_Propping_Report.docx", 
