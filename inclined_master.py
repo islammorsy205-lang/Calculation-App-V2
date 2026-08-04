@@ -153,7 +153,8 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
         
     display_nodes = set([s['node'] for s in supports_list])
     display_nodes.add(inc_node_indices[-1])
-    display_nodes.add(base_node_indices[-1])
+    if len(base_node_indices) > 0:
+        display_nodes.add(base_node_indices[-1])
     
     target_Ls = [sum(L_segs[:j+1]) for j in range(len(L_segs))]
     for j in range(len(L_segs)):
@@ -214,14 +215,15 @@ def build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_s
                     nodal_loads.append({'node': n_idx, 'Fx': ld['w1']*s, 'Fy': -ld['w1']*c})
             except ValueError: pass
                 
-    base_props = SECTIONS_DB.get(base_sec, {'E': 2100.0, 'I': 412.0, 'Mall': 13.1, 'Qall': 100.8})
-    for i in range(len(base_node_indices)-1):
-        elements.append({
-            'type': 'frame', 'group': 'base', 'sec': base_sec,
-            'n1': base_node_indices[i], 'n2': base_node_indices[i+1],
-            'px1': 0.0, 'py1': 0.0, 'px2': 0.0, 'py2': 0.0,
-            'E': base_props.get('E', 2100.0) * 10000.0, 'A': 0.00343, 'I': base_props.get('I', 412.0) / 100000000.0
-        })
+    if base_sec != "None (Direct to Ground)":
+        base_props = SECTIONS_DB.get(base_sec, {'E': 2100.0, 'I': 412.0, 'Mall': 13.1, 'Qall': 100.8})
+        for i in range(len(base_node_indices)-1):
+            elements.append({
+                'type': 'frame', 'group': 'base', 'sec': base_sec,
+                'n1': base_node_indices[i], 'n2': base_node_indices[i+1],
+                'px1': 0.0, 'py1': 0.0, 'px2': 0.0, 'py2': 0.0,
+                'E': base_props.get('E', 2100.0) * 10000.0, 'A': 0.00343, 'I': base_props.get('I', 412.0) / 100000000.0
+            })
         
     X_cum_strut = 0.0
     for j in range(len(L_segs)):
@@ -412,6 +414,8 @@ def get_img_buf(fig):
 
 def draw_base_geometry(ax, nodes, elements, supports_list):
     for el in elements:
+        if el['group'] == 'base' and el['sec'] == "None (Direct to Ground)":
+            continue
         n1, n2 = nodes[el['n1']], nodes[el['n2']]
         color = 'black' if el['type'] == 'frame' else 'gray'
         style = '-' if el['type'] == 'frame' else '--'
@@ -464,8 +468,9 @@ def draw_section_names(ax, elements, nodes, L_tot, X_tot, angle_deg, inc_sec, ba
     inc_mid_y = (L_tot/2) * s_ang
     ax.text(inc_mid_x - s_ang*0.15, inc_mid_y + c_ang*0.15, get_short_name(inc_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', rotation=angle_deg, fontname='Arial')
     
-    base_mid_x = X_tot/2
-    ax.text(base_mid_x, -0.2, get_short_name(base_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', fontname='Arial')
+    if base_sec != "None (Direct to Ground)":
+        base_mid_x = X_tot/2
+        ax.text(base_mid_x, -0.2, get_short_name(base_sec), color='gray', fontsize=7, alpha=0.9, ha='center', va='center', fontname='Arial')
     
     drawn_struts = set()
     for el in elements:
@@ -690,6 +695,9 @@ def plot_sap2000_diagrams(nodes, elements, R_reactions, scales, display_nodes, a
                     plotted_texts.add(sig)
 
         for el in elements:
+            if el['group'] == 'base' and el['sec'] == "None (Direct to Ground)":
+                continue
+            
             n1, n2 = nodes[el['n1']], nodes[el['n2']]
             x1, y1 = n1[0], n1[1]
             x2, y2 = n2[0], n2[1]
@@ -806,13 +814,18 @@ def generate_inclined_report(sys_data):
         r_title = p.add_run(f"• Check {component} ({param}):\n")
         r_title.bold = True
         r_title.font.rtl = False
-        r_act = p.add_run(f"  Actual = {act:.2f} {unit}  <  Allowable = {allw:.2f} {unit}  ")
+        if allw > 9000:
+            r_act = p.add_run(f"  Actual = {act:.2f} {unit}  (No Limit Required)")
+            r_res = p.add_run("  SAFE")
+            r_res.font.color.rgb = RGBColor(0, 128, 0)
+        else:
+            r_act = p.add_run(f"  Actual = {act:.2f} {unit}  <  Allowable = {allw:.2f} {unit}  ")
+            res = "SAFE" if act <= allw else "UNSAFE"
+            r_res = p.add_run(res)
+            r_res.font.color.rgb = RGBColor(0, 128, 0) if res == "SAFE" else RGBColor(255, 0, 0)
         r_act.font.rtl = False
-        res = "SAFE" if act <= allw else "UNSAFE"
-        r_res = p.add_run(res)
         r_res.font.bold = True
         r_res.font.rtl = False
-        r_res.font.color.rgb = RGBColor(0, 128, 0) if res == "SAFE" else RGBColor(255, 0, 0)
     
     p_title = doc.add_paragraph()
     force_ltr_left(p_title)
@@ -835,19 +848,20 @@ def generate_inclined_report(sys_data):
     inc_sec = sys_data['inc_sec']
     add_line(f"A. Inclined Soldier ({inc_sec})", bold=True)
     inc_db = SECTIONS_DB.get(inc_sec, {'Mall': 13.1, 'Qall': 100.8})
-    add_check("Moment", "M_max", sys_data['max_M_inc'], inc_db.get('Mall', 999), "kN.m")
-    add_check("Shear", "V_max", sys_data['max_V_inc'], inc_db.get('Qall', 999), "kN")
-    add_check("Deflection", "Local Normal", sys_data['max_def_inc'], sys_data['L_tot'] * 1000 / 200, "mm")
+    add_check("Moment", "M_max", sys_data.get('max_M_inc', 0), inc_db.get('Mall', 999), "kN.m")
+    add_check("Shear", "V_max", sys_data.get('max_V_inc', 0), inc_db.get('Qall', 999), "kN")
+    add_check("Deflection", "Local Normal", sys_data.get('max_def_inc', 0), sys_data['L_tot'] * 1000 / 200, "mm")
     
     base_sec = sys_data['base_sec']
-    add_line(f"B. Horizontal Base Soldier ({base_sec})", bold=True)
-    base_db = SECTIONS_DB.get(base_sec, {'Mall': 13.1, 'Qall': 100.8})
-    add_check("Moment", "M_max", sys_data['max_M_base'], base_db.get('Mall', 999), "kN.m")
-    add_check("Shear", "V_max", sys_data['max_V_base'], base_db.get('Qall', 999), "kN")
-    add_check("Deflection", "Local Normal", sys_data['max_def_base'], sys_data['X_tot'] * 1000 / 200, "mm")
+    if base_sec != "None (Direct to Ground)":
+        add_line(f"B. Horizontal Base Soldier ({base_sec})", bold=True)
+        base_db = SECTIONS_DB.get(base_sec, {'Mall': 13.1, 'Qall': 100.8})
+        add_check("Moment", "M_max", sys_data.get('max_M_base', 0), base_db.get('Mall', 999), "kN.m")
+        add_check("Shear", "V_max", sys_data.get('max_V_base', 0), base_db.get('Qall', 999), "kN")
+        add_check("Deflection", "Local Normal", sys_data.get('max_def_base', 0), sys_data['X_tot'] * 1000 / 200, "mm")
     
     add_line("C. Push-Pull Struts (Axial Force)", bold=True)
-    for idx, st_val in enumerate(sys_data['struts_res']):
+    for idx, st_val in enumerate(sys_data.get('struts_res', [])):
         st_data = STRUTS_DB.get(st_val['type'], {})
         allow = st_data.get('allow', st_data.get('pts', {0: 50.0}).get(list(st_data.get('pts', {0:50.0}).keys())[0], 50.0))
         add_check(f"Strut {idx+1} ({st_val['type']})", "N_max", st_val['N'], allow, "kN")
@@ -897,18 +911,18 @@ def render_inclined_module():
         st.session_state.inclined_solved = False
         
     st.markdown("#### ⚙️ 1. Geometry & Profiles")
-    c_g1, c_g2, c_g3, c_g4 = st.columns(4)
-    L_tot_val = c_g1.number_input("Inclined Length (m)", value=5.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
-    X_tot_val = c_g2.number_input("Base Length (m)", value=3.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
-    angle_deg = c_g3.number_input("Inclination Angle (°)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
-    num_struts = c_g4.number_input("Push-Pulls Count", min_value=1, max_value=5, value=2, step=1, on_change=lambda: st.session_state.update(inclined_solved=False))
+    c_g1, c_g2 = st.columns(2)
+    angle_deg = c_g1.number_input("Inclination Angle (Degrees, < 90)", value=60.0, step=5.0, on_change=lambda: st.session_state.update(inclined_solved=False))
     angle_rad = np.radians(angle_deg)
+    num_struts = c_g2.number_input("Number of Push-Pulls", min_value=1, max_value=5, value=2, step=1, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     c_p1, c_p2 = st.columns(2)
     sec_list = list(SECTIONS_DB.keys()) if SECTIONS_DB else ["Soldier U100"]
+    base_sec_list = ["None (Direct to Ground)"] + sec_list
     default_idx = next((i for i, sec in enumerate(sec_list) if 'Soldier' in sec), 0)
-    inc_sec = c_p1.selectbox("Profile (Inclined Soldier)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
-    base_sec = c_p2.selectbox("Profile (Base Soldier)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
+    
+    inc_sec = c_p1.selectbox("Profile (Inclined)", sec_list, index=default_idx, on_change=lambda: st.session_state.update(inclined_solved=False))
+    base_sec = c_p2.selectbox("Profile (Base)", base_sec_list, index=default_idx+1, on_change=lambda: st.session_state.update(inclined_solved=False))
     
     st.markdown("#### 🔗 2. Segments & Connections")
     L_segs, X_segs, strut_types = [], [], []
@@ -929,8 +943,13 @@ def render_inclined_module():
         st_type = cl3.selectbox(f"Strut {j+1} (Req: {req_len:.2f}m)", valid_struts, key=f"st_{j}", on_change=lambda: st.session_state.update(inclined_solved=False))
         strut_types.append(st_type)
         
-    L_rem = max(0.0, L_tot_val - sum(L_segs))
-    X_rem = max(0.0, X_tot_val - sum(X_segs))
+    cr1, cr2 = st.columns(2)
+    L_rem = cr1.number_input("Top Cantilever L (m)", value=1.0, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    X_rem = cr2.number_input("Right Cantilever X (m)", value=0.5, step=0.5, on_change=lambda: st.session_state.update(inclined_solved=False))
+    
+    L_tot_val = sum(L_segs) + L_rem
+    X_tot_val = sum(X_segs) + X_rem
+    st.info(f"📏 **Calculated Total Lengths:** Inclined = {L_tot_val:.2f} m | Base = {X_tot_val:.2f} m")
     
     st.markdown("#### ⚓ 3. Ground Supports Configuration")
     c_s1, c_s2, c_s3, c_s4 = st.columns(4)
@@ -998,16 +1017,16 @@ def render_inclined_module():
             elif l_type == "Uniform":
                 c1, c2, c3 = st.columns(3)
                 start_l = c1.number_input(f"L{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                len_l = c2.number_input(f"L{item+1} Length (m)", value=L_tot_val, step=0.5, key=f"ll_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                end_l = c2.number_input(f"L{item+1} End from Corner (m)", value=L_tot_val, step=0.5, key=f"le_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 w1 = c3.number_input(f"L{item+1} W (kN/m)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w1, 'dir': ldir})
+                applied_loads.append({'type': l_type, 'start': min(start_l, end_l), 'end': max(start_l, end_l), 'w1': w1, 'w2': w1, 'dir': ldir})
             else:
                 c1, c2, c3, c4 = st.columns(4)
                 start_l = c1.number_input(f"L{item+1} Start from Corner (m)", value=0.0, step=0.5, key=f"ls_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                len_l = c2.number_input(f"L{item+1} Length (m)", value=L_tot_val, step=0.5, key=f"ll_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
+                end_l = c2.number_input(f"L{item+1} End from Corner (m)", value=L_tot_val, step=0.5, key=f"le_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 w1 = c3.number_input(f"L{item+1} W1 (kN/m)", value=15.0, step=1.0, key=f"w1_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
                 w2 = c4.number_input(f"L{item+1} W2 (kN/m)", value=0.0, step=1.0, key=f"w2_{item}", on_change=lambda: st.session_state.update(inclined_solved=False))
-                applied_loads.append({'type': l_type, 'start': start_l, 'end': start_l+len_l, 'w1': w1, 'w2': w2, 'dir': ldir})
+                applied_loads.append({'type': l_type, 'start': min(start_l, end_l), 'end': max(start_l, end_l), 'w1': w1, 'w2': w2, 'dir': ldir})
 
     nodes, elements, nodal_loads, L_tot, X_tot, display_nodes, supports_list = build_fea_mesh(L_segs, L_rem, X_segs, X_rem, angle_rad, applied_loads, inc_sec, base_sec, strut_types, corner_sup, base_sups)
 
@@ -1023,13 +1042,43 @@ def render_inclined_module():
         if st.button("🚀 Run Advanced FEA & Generate Report", type="primary", use_container_width=True):
             with st.spinner("Building Matrix & Solving FEA..."):
                 U, R = solve_fea_engine(nodes, elements, nodal_loads, supports_list)
+                
+                max_M_inc, max_V_inc, max_M_base, max_V_base = 0, 0, 0, 0
+                max_def_inc, max_def_base = 0.0, 0.0
+                struts_results = []
+                
+                for el in elements:
+                    if el['type'] == 'frame':
+                        max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
+                        if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
+                        max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
+                        if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
+                        
+                        v_def_start = abs(el['internal']['u_loc'][1]) * 1000
+                        v_def_end = abs(el['internal']['u_loc'][4]) * 1000
+                        max_def_el = max(v_def_start, v_def_end)
+                        
+                        if el['group'] == 'inclined': 
+                            max_M_inc = max(max_M_inc, max_M)
+                            max_V_inc = max(max_V_inc, max_V)
+                            max_def_inc = max(max_def_inc, max_def_el)
+                        elif el['group'] == 'base': 
+                            max_M_base = max(max_M_base, max_M)
+                            max_V_base = max(max_V_base, max_V)
+                            max_def_base = max(max_def_base, max_def_el)
+                    elif el['type'] == 'truss':
+                        struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
+
                 st.session_state.inclined_fea_data = {
                     'U': U, 'R': R, 'nodes': nodes, 'elements': elements, 'display_nodes': display_nodes, 'supports_list': supports_list,
                     'sys_data': {
                         'L_tot': L_tot, 'X_tot': X_tot, 'angle': angle_deg, 'W': "Variable", 'ld_dir': "Variable",
                         'inc_sec': inc_sec, 'base_sec': base_sec, 
                         'corner_check_opt': corner_check_opt, 'corner_tr_cap': corner_tr_cap, 
-                        'shoring_type': shoring_desc, 'allw_sh': allw_sh
+                        'shoring_type': shoring_desc, 'allw_sh': allw_sh,
+                        'max_M_inc': max_M_inc, 'max_V_inc': max_V_inc, 'max_def_inc': max_def_inc,
+                        'max_M_base': max_M_base, 'max_V_base': max_V_base, 'max_def_base': max_def_base,
+                        'struts_res': struts_results
                     }
                 }
                 st.session_state.inclined_solved = True
@@ -1045,35 +1094,7 @@ def render_inclined_module():
     if getattr(st.session_state, 'show_safety_table', False) and st.session_state.inclined_solved:
         fea_data = st.session_state.inclined_fea_data
         sd = fea_data['sys_data']
-        
-        max_M_inc, max_V_inc, max_M_base, max_V_base = 0, 0, 0, 0
-        max_def_inc, max_def_base = 0.0, 0.0
-        struts_results = []
-        
-        for el in fea_data['elements']:
-            if el['type'] == 'frame':
-                max_M = max(abs(el['internal']['M'][0]), abs(el['internal']['M'][-1]))
-                if len(el['internal']['M']) > 2: max_M = max(max_M, np.max(np.abs(el['internal']['M'])))
-                max_V = max(abs(el['internal']['V'][0]), abs(el['internal']['V'][-1]))
-                if len(el['internal']['V']) > 2: max_V = max(max_V, np.max(np.abs(el['internal']['V'])))
-                
-                v_def_start = abs(el['internal']['u_loc'][1]) * 1000
-                v_def_end = abs(el['internal']['u_loc'][4]) * 1000
-                max_def_el = max(v_def_start, v_def_end)
-                
-                if el['group'] == 'inclined': 
-                    max_M_inc = max(max_M_inc, max_M)
-                    max_V_inc = max(max_V_inc, max_V)
-                    max_def_inc = max(max_def_inc, max_def_el)
-                elif el['group'] == 'base': 
-                    max_M_base = max(max_M_base, max_M)
-                    max_V_base = max(max_V_base, max_V)
-                    max_def_base = max(max_def_base, max_def_el)
-            elif el['type'] == 'truss':
-                struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
-        
-        sd['max_def_inc'] = max_def_inc
-        sd['max_def_base'] = max_def_base
+        struts_results = sd['struts_res']
         
         html = """
         <style>
@@ -1102,16 +1123,16 @@ def render_inclined_module():
         inc_db = SECTIONS_DB.get(sd['inc_sec'], {'Mall': 13.1, 'Qall': 100.8})
         base_db = SECTIONS_DB.get(sd['base_sec'], {'Mall': 13.1, 'Qall': 100.8})
 
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", max_M_inc, inc_db.get('Mall', 999), "kN.m")
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", max_V_inc, inc_db.get('Qall', 999), "kN")
-        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Deflection", max_def_inc, sd['L_tot'] * 1000 / 200, "mm")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Moment", sd['max_M_inc'], inc_db.get('Mall', 999), "kN.m")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Shear", sd['max_V_inc'], inc_db.get('Qall', 999), "kN")
+        html += add_row("Inclined Soldier", f"{sd['inc_sec']} - Deflection", sd['max_def_inc'], sd['L_tot'] * 1000 / 200, "mm")
         
-        html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", max_M_base, base_db.get('Mall', 999), "kN.m")
-        html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", max_V_base, base_db.get('Qall', 999), "kN")
-        html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", max_def_base, sd['X_tot'] * 1000 / 200, "mm")
+        if sd['base_sec'] != "None (Direct to Ground)":
+            html += add_row("Base Soldier", f"{sd['base_sec']} - Moment", sd['max_M_base'], base_db.get('Mall', 999), "kN.m")
+            html += add_row("Base Soldier", f"{sd['base_sec']} - Shear", sd['max_V_base'], base_db.get('Qall', 999), "kN")
+            html += add_row("Base Soldier", f"{sd['base_sec']} - Deflection", sd['max_def_base'], sd['X_tot'] * 1000 / 200, "mm")
         
         for i, st_res in enumerate(struts_results):
-            # 💡 تصحيح دقيق لمعالجة الخطأ البرمجي في اسم المتغير
             st_data = STRUTS_DB.get(st_res['type'], {})
             allow = st_data.get('allow', st_data.get('pts', {0: 50.0}).get(list(st_data.get('pts', {0:50.0}).keys())[0], 50.0))
             html += add_row(f"Push-Pull Strut {i+1}", st_res['type'], st_res['N'], allow, "kN")
@@ -1167,15 +1188,7 @@ def render_inclined_module():
                 st.image(img_bufs[key], use_container_width=True)
                 st.markdown(f"<p style='text-align: center; border-bottom: 1px solid gray; padding-bottom: 5px; font-family: Arial; font-size: 14px;'>{titles[key]}</p>", unsafe_allow_html=True)
         
-        struts_results = []
-        for el in fea_data['elements']:
-            if el['type'] == 'truss':
-                struts_results.append({'type': el['sec'], 'N': abs(el['internal']['N'][0])})
-            
-        fea_data['sys_data'].update({
-            'struts_res': struts_results,
-            'img_bufs': img_bufs
-        })
+        fea_data['sys_data'].update({'img_bufs': img_bufs})
         
         docx_out = generate_inclined_report(fea_data['sys_data'])
         
