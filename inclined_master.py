@@ -80,7 +80,7 @@ def solve_inclined_fea(nodes, elements, applied_loads):
         if ld_dir == 'Gravity (Vertical ↓)':
             p_x = -W_val * s
             p_y = -W_val * c
-        else: # Perpendicular
+        else:
             p_x = 0.0
             p_y = -W_val
         
@@ -208,23 +208,29 @@ def plot_live_geometry(nodes, elements, applied_loads):
         lw = 4 if el['type'] == 'frame' else 2
         ax.plot([n1[0], n2[0]], [n1[1], n2[1]], color=color, linestyle=style, linewidth=lw)
 
+        # 💡 الحل الجراحي: حساب الطول والزوايا (L, c, s) هنا لضمان عمل الرسم اللحظي بدون الاعتماد على الـ Solver
+        x1, y1 = n1[0], n1[1]
+        x2, y2 = n2[0], n2[1]
+        L_val = np.hypot(x2 - x1, y2 - y1)
+        c_val = (x2 - x1) / L_val if L_val != 0 else 1
+        s_val = (y2 - y1) / L_val if L_val != 0 else 0
+
         for ld in applied_loads:
             if ld['mem_idx'] == idx:
                 W = ld['W']
                 dir_type = ld['dir']
-                L, c, s = el['L'], el['c'], el['s']
-                xs = np.linspace(0, L, 6)
+                xs = np.linspace(0, L_val, 6)
                 for x_dist in xs:
-                    px = n1[0] + c * x_dist
-                    py = n1[1] + s * x_dist
+                    px = n1[0] + c_val * x_dist
+                    py = n1[1] + s_val * x_dist
                     if dir_type == 'Gravity (Vertical ↓)':
                         ax.arrow(px, py + 1.5, 0, -1.0, head_width=0.15, head_length=0.2, fc='magenta', ec='magenta', zorder=4)
                     else:
-                        ax.arrow(px - s*1.5, py + c*1.5, s*1.0, -c*1.0, head_width=0.15, head_length=0.2, fc='magenta', ec='magenta', zorder=4)
+                        ax.arrow(px - s_val*1.5, py + c_val*1.5, s_val*1.0, -c_val*1.0, head_width=0.15, head_length=0.2, fc='magenta', ec='magenta', zorder=4)
                 
-                mid_x = n1[0] + c * (L/2)
-                mid_y = n1[1] + s * (L/2)
-                ax.text(mid_x - s*2.0, mid_y + c*2.0, f"{W} kN/m\n({dir_type.split()[0]})", color='magenta', fontweight='bold', ha='center')
+                mid_x = n1[0] + c_val * (L_val/2)
+                mid_y = n1[1] + s_val * (L_val/2)
+                ax.text(mid_x - s_val*2.0, mid_y + c_val*2.0, f"{W} kN/m\n({dir_type.split()[0]})", color='magenta', fontweight='bold', ha='center')
 
     plt.title("Live Geometry & Assigned Load Diagram", fontsize=14, fontweight='bold')
     plt.tight_layout()
@@ -447,7 +453,6 @@ def render_inclined_module():
         
     st.markdown("---")
     
-    # 💡 بناء المنظومة اللحظية للرسم التفاعلي (يتم تنفيذها فوراً خارج زر Run)
     nodes = []
     nodes.append([0.0, 0.0, False, True, False]) 
     
@@ -511,13 +516,11 @@ def render_inclined_module():
         })
         struts_results_placeholder.append({'idx': len(elements)-1, 'type': st_type})
 
-    # 💡 عرض الرسمة اللحظية (تتحدث مع كل تعديل يقوم به المهندس)
     live_img_buf = plot_live_geometry(nodes, elements, applied_loads)
     st.image(live_img_buf, use_container_width=True)
 
     st.markdown("---")
     
-    # 💡 إجراء الحسابات واستخراج النوتة
     if st.button("🚀 Run Advanced FEA & Generate Report", type="primary", use_container_width=True):
         with st.spinner("Building Stiffness Matrix & Solving..."):
             U, R, final_nodes, final_elements = solve_inclined_fea(nodes, elements, applied_loads)
