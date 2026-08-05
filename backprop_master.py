@@ -65,12 +65,11 @@ def plot_zone_system(conf):
         ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
         
         # =========================================================================
-        # 💡 التعديل: وضع النص مجمعاً فوق البلاطة القديمة مباشرة وفي جهة اليمين
+        # 💡 التعديل: تجميع النصين بنفس الخط واللون والمحاذاة لليمين بجوار البلاطة
         # =========================================================================
         if 'Existing' in res['level']:
             combined_text = f"SIDL:{res['sidl']:.2f} | L.L:{res['ll']:.2f} (kN/m²)\nStrength achieved: {res['strength']:.0f}%"
-            # x=5.7 (يبدأ يمين الخط الرأسي للشدة) | y+0.25 (يجلس فوق البلاطة)
-            ax.text(5.7, y + 0.25, combined_text, ha='left', va='bottom', fontsize=6, fontweight='normal', color='dimgray')
+            ax.text(10.8, y, combined_text, ha='right', va='center', fontsize=6, fontweight='normal', color='dimgray')
         
         if i < num_levels - 1 and res['transferred'] > 0:
             next_y = y_pos[i+1]
@@ -81,8 +80,7 @@ def plot_zone_system(conf):
             ax.plot([2.5, 2.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             
-    # تصغير المساحة البيضاء الزائدة على اليمين بما أن النص أصبح فوق البلاطة
-    ax.set_xlim(0, 9.5) 
+    ax.set_xlim(0, 11.0) 
     ax.set_ylim(0, max(y_pos) + 1)
     ax.axis('off')
     plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
@@ -259,7 +257,8 @@ def render_backprop_module(ref_code):
             st.info(f"**Total Fresh Slab Load = {W_fresh:.2f} kN/m²**")
             
             st.markdown("---")
-            num_exist = st.number_input("Number of Existing Slabs Below", 1, 5, 2, key=f'nx_{idx}')
+            # 💡 تم إزالة الحد الأقصى (max_value) لتسمح بإدخال أي عدد من الأدوار
+            num_exist = st.number_input("Number of Existing Slabs Below", min_value=1, value=2, step=1, key=f'nx_{idx}')
             existing_slabs = []
             
             current_ui_transferred = W_fresh
