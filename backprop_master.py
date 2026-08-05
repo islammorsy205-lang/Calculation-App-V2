@@ -65,11 +65,11 @@ def plot_zone_system(conf):
         ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
         
         # =========================================================================
-        # 💡 التعديل: تجميع النصين بنفس الخط واللون والمحاذاة لليمين بجوار البلاطة
+        # 💡 التعديل: تجميع النصين وتصغير الحجم بنسبة 35% ليطابق التصميم المرفق تماماً
         # =========================================================================
         if 'Existing' in res['level']:
-            combined_text = f"SIDL: {res['sidl']:.2f} kN/m²  |  L.L: {res['ll']:.2f} kN/m²\nStrength Achieved: {res['strength']:.0f}%"
-            ax.text(10.8, y, combined_text, ha='right', va='center', fontsize=9, fontweight='bold', color='dimgray')
+            combined_text = f"SIDL:{res['sidl']:.2f} | L.L:{res['ll']:.2f} (kN/m²)\nStrength achieved: {res['strength']:.0f}%"
+            ax.text(10.8, y, combined_text, ha='right', va='center', fontsize=6, fontweight='normal', color='dimgray')
         
         if i < num_levels - 1 and res['transferred'] > 0:
             next_y = y_pos[i+1]
@@ -80,7 +80,7 @@ def plot_zone_system(conf):
             ax.plot([2.5, 2.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             
-    ax.set_xlim(0, 11.0) # 💡 تم توسيع الإطار الأفقي لاحتواء النص المجمع
+    ax.set_xlim(0, 11.0) 
     ax.set_ylim(0, max(y_pos) + 1)
     ax.axis('off')
     plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
