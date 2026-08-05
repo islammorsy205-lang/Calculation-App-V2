@@ -97,7 +97,7 @@ def_live_load = 1.50 if "BS" in ref_code else 2.40
 st.divider()
 st.subheader("2. Structural System Configurator")
 
-sys_cat = st.radio("Select Structural Category:", ["Slab Elements", "Vertical Elements (Walls, Columns)", "Inclined Elements (Frames)", "Slab Back-propping"], horizontal=True)
+sys_cat = st.radio("Select Structural Category:", ["Slab Elements", "Vertical Elements (Walls, Columns)", "Inclined Elements (Frames)", "Slab Back-propping", "Bridges"], horizontal=True)
 
 if "Inclined Elements" in sys_cat:
     import inclined_master
@@ -107,6 +107,11 @@ if "Inclined Elements" in sys_cat:
 if "Back-propping" in sys_cat:
     import backprop_master
     backprop_master.render_backprop_module(ref_code)
+    st.stop()
+
+if "Bridges" in sys_cat:
+    import bridge_master
+    bridge_master.render_bridge_module()
     st.stop()
 
 configs = []
