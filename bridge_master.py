@@ -17,7 +17,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 # =========================================================
-# 1. HTML Parser Engine (Extracting EVERYTHING)
+# 1. HTML Parser Engine (Extracting EVERYTHING Safely)
 # =========================================================
 def parse_bridge_html(html_content):
     """Parses JavaScript arrays and HTML tables from the provided HTML file."""
@@ -45,11 +45,10 @@ def parse_bridge_html(html_content):
 
     # 2. Extract All Tables using Pandas
     try:
-        # Wrap in StringIO to avoid pandas warning
         dfs = pd.read_html(io.StringIO(html_content))
     except Exception as e:
         dfs = []
-        st.warning("⚠️ تعذر استخراج بعض الجداول من الملف.")
+        st.warning("⚠️ تعذر استخراج الجداول من الملف المرفق.")
 
     return nodes, elements, dfs
 
@@ -67,7 +66,8 @@ def get_img_buf(fig):
 def draw_base_structure(ax, nodes, elements):
     nodes_dict = {n['id']: n for n in nodes}
     for el in elements:
-        n1, n2 = nodes_dict[el['i']], nodes_dict[el['j']]
+        n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
+        if not n1 or not n2: continue
         ax.plot([n1['x'], n2['x']], [n1['y'], n2['y']], color='dimgray', linewidth=1.5, zorder=1)
         
     for n in nodes:
@@ -101,7 +101,9 @@ def draw_sap2000_forces(val_key, nodes, elements, scale, is_axial=False):
     nodes_dict = draw_base_structure(ax, nodes, elements)
 
     for el in elements:
-        n1, n2 = nodes_dict[el['i']], nodes_dict[el['j']]
+        n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
+        if not n1 or not n2: continue
+        
         x1, y1 = n1['x'], n1['y']
         x2, y2 = n2['x'], n2['y']
         dx, dy = x2 - x1, y2 - y1
@@ -113,7 +115,9 @@ def draw_sap2000_forces(val_key, nodes, elements, scale, is_axial=False):
         if not diag_arr: continue
         
         ts = np.array([pt['t'] for pt in diag_arr])
-        vals_orig = np.array([pt['n' if is_axial else val_key.lower()] for pt in diag_arr])
+        vals_orig = np.array([pt.get('n' if is_axial else val_key.lower(), 0) for pt in diag_arr])
+        if len(vals_orig) == 0: continue
+        
         plot_vals = -vals_orig if val_key != 'N' else vals_orig
         
         px_arr = x1 + c * (ts * L_s) - s * plot_vals * scale
@@ -149,15 +153,14 @@ def draw_sap2000_deflection(nodes, elements, defl_scale):
     
     nodes_dict = draw_base_structure(ax, nodes, elements)
     
-    # Draw deformed shape
     max_defl = 0
     max_pt = None
     
     for el in elements:
-        n1, n2 = nodes_dict[el['i']], nodes_dict[el['j']]
+        n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
+        if not n1 or not n2: continue
         x1, y1 = n1['x'] + n1.get('dx', 0) * defl_scale, n1['y'] + n1.get('dy', 0) * defl_scale
         x2, y2 = n2['x'] + n2.get('dx', 0) * defl_scale, n2['y'] + n2.get('dy', 0) * defl_scale
-        
         ax.plot([x1, x2], [y1, y2], color='red', linestyle='--', linewidth=1.5, alpha=0.8, zorder=3)
         
     for n in nodes:
@@ -212,18 +215,16 @@ def draw_sap2000_loads(nodes, elements):
         w = el.get('wTotal', 0)
         if abs(w) < 0.1: continue
         
-        n1, n2 = nodes_dict[el['i']], nodes_dict[el['j']]
+        n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
+        if not n1 or not n2: continue
         x1, y1 = n1['x'], n1['y']
         x2, y2 = n2['x'], n2['y']
         
         h = abs(w) * scale_h
-        
-        # Draw Blue UDL Patch
         poly = Polygon([(x1,y1), (x1, y1+h), (x2, y2+h), (x2, y2)], facecolor='royalblue', edgecolor='blue', alpha=0.3, zorder=2)
         ax.add_patch(poly)
         
-        # Draw Arrows inside
-        num_arr = int(np.hypot(x2-x1, y2-y1) / 0.5)
+        num_arr = max(1, int(np.hypot(x2-x1, y2-y1) / 0.5))
         for i in range(1, num_arr):
             fx = x1 + (x2-x1) * (i/num_arr)
             fy = y1 + (y2-y1) * (i/num_arr)
@@ -263,6 +264,9 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
         return p
 
     def add_df_to_word(doc, df, title):
+        if df.empty or len(df.columns) == 0:
+            return
+            
         add_line(title, bold=True, size=13, color=RGBColor(0,0,128))
         table = doc.add_table(rows=1, cols=len(df.columns))
         table.style = 'Table Grid'
@@ -281,6 +285,7 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
             row_cells = table.add_row().cells
             for i, val in enumerate(row):
                 cell_text = str(val)
+                if cell_text == "nan": cell_text = "-"
                 row_cells[i].text = cell_text
                 for paragraph in row_cells[i].paragraphs:
                     for run in paragraph.runs:
@@ -306,9 +311,30 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
     add_line(f"- Total Nodes Analyzed: {len(nodes)}")
     add_line(f"- Total Elements Analyzed: {len(elements)}")
     
+    # حساب أقصى قيم
+    max_m, max_v, max_n_tens, max_n_comp = 0, 0, 0, 0
+    for el in elements:
+        if 'maxM' in el: max_m = max(max_m, abs(el['maxM']))
+        if 'maxV' in el: max_v = max(max_v, abs(el['maxV']))
+        if 'maxN' in el:
+            if el['maxN'] > 0: max_n_tens = max(max_n_tens, el['maxN'])
+            else: max_n_comp = min(max_n_comp, el['maxN'])
+            
+    add_line("\n2. Global Force Extremes:", bold=True)
+    add_line(f"- Maximum Bending Moment = {max_m:.2f} kN.m")
+    add_line(f"- Maximum Shear Force = {max_v:.2f} kN")
+    add_line(f"- Maximum Axial Tension = {max_n_tens:.2f} kN")
+    add_line(f"- Maximum Axial Compression = {abs(max_n_comp):.2f} kN")
+    
+    add_line("\n3. Support Reactions:", bold=True)
+    for n in nodes:
+        if n.get('fixX') or n.get('fixY') or n.get('fixT'):
+            rx, ry = n.get('rx', 0), n.get('ry', 0)
+            add_line(f"- Node {n.get('name', 'N')}: Rx = {rx:.2f} kN | Ry = {ry:.2f} kN", color=RGBColor(0, 100, 0))
+
     # --- 2. Tables ---
     doc.add_page_break()
-    add_line("2. Structural Analysis Tables & Safety Checks:", bold=True, size=15)
+    add_line("4. Structural Analysis Tables & Safety Checks:", bold=True, size=15)
     doc.add_paragraph()
     
     table_titles = [
@@ -323,7 +349,7 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
 
     # --- 3. Diagrams ---
     doc.add_page_break()
-    add_line("3. Structural Diagrams (SAP2000 Convention):", bold=True, size=15)
+    add_line("5. Structural Diagrams (SAP2000 Convention):", bold=True, size=15)
     
     diagram_order = [
         ('L', "Global Applied Loads (kN/m)"),
@@ -335,7 +361,8 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
     ]
     
     for key, title in diagram_order:
-        buf = img_bufs[key]
+        buf = img_bufs.get(key)
+        if not buf: continue
         buf.seek(0)
         
         p_img = doc.add_paragraph()
@@ -375,13 +402,30 @@ def render_bridge_module():
             st.success(f"✅ Data Extracted Successfully! Found **{len(nodes)} Nodes**, **{len(elements)} Elements**, and **{len(dfs)} Analysis Tables**.")
             
             with st.expander("📊 Preview Extracted Tables (Safety Checks)", expanded=False):
+                def apply_color(val):
+                    text = str(val).upper()
+                    if "PASS" in text or "SAFE" in text: return "background-color: #d4edda; color: green; font-weight: bold;"
+                    elif "FAIL" in text or "UNSAFE" in text: return "background-color: #f8d7da; color: red; font-weight: bold;"
+                    return ""
+                    
                 for i, df in enumerate(dfs):
                     st.markdown(f"**Table {i+1}**")
-                    st.dataframe(df.style.applymap(lambda x: "background-color: #d4edda; color: green;" if str(x).upper() == "PASS" else ("background-color: #f8d7da; color: red;" if str(x).upper() == "FAIL" else ""), subset=pd.IndexSlice[:, df.columns.intersection(['Status', 'Load Status'])] if 'Status' in df.columns or 'Load Status' in df.columns else []))
+                    try:
+                        style_cols = [c for c in df.columns if c in ['Status', 'Load Status']]
+                        if style_cols:
+                            if hasattr(df.style, 'map'):
+                                styled_df = df.style.map(apply_color, subset=style_cols)
+                            else:
+                                styled_df = df.style.applymap(apply_color, subset=style_cols)
+                            st.dataframe(styled_df)
+                        else:
+                            st.dataframe(df)
+                    except Exception:
+                        st.dataframe(df) # Safe Fallback
             
             st.markdown("---")
             
-            # --- DIAGRAMS RENDERED BEFORE DOWNLOAD BUTTON ---
+            # --- RENDER DIAGRAMS AND SHOW SLIDERS ABOVE THEM ---
             st.markdown("### 🎛️ Customize Diagram Scales & Live View")
             c_s1, c_s2, c_s3, c_s4 = st.columns(4)
             sc_n = c_s1.slider("Axial Scale", 0.001, 0.050, 0.015, step=0.001)
@@ -414,14 +458,21 @@ def render_bridge_module():
                 
             st.markdown("---")
             
-            # --- DOWNLOAD BUTTON AT THE BOTTOM ---
-            if st.button("🚀 Process & Generate Calculation Sheet", type="primary", use_container_width=True):
+            # --- PROCESS BUTTON SEPARATED FROM DOWNLOAD TO AVOID STREAMLIT EXCEPTION ---
+            if st.button("🚀 Process & Prepare Calculation Sheet", type="primary", use_container_width=True):
                 with st.spinner("Building Comprehensive Word Document..."):
-                    docx_out = generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs)
-                    st.download_button(
-                        "⬇️ Download Full Bridge Calculation Sheet (Word)", 
-                        data=docx_out.getvalue(), 
-                        file_name="Acrow_Bridge_Full_Report.docx", 
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        use_container_width=True
-                    )
+                    try:
+                        docx_out = generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs)
+                        st.session_state['bridge_docx_ready'] = docx_out
+                        st.success("✅ Document Ready! You can download it below.")
+                    except Exception as e:
+                        st.error(f"⚠️ خطأ أثناء تجميع ملف الوورد: {e}")
+            
+            if 'bridge_docx_ready' in st.session_state:
+                st.download_button(
+                    "⬇️ Download Full Bridge Calculation Sheet (Word)", 
+                    data=st.session_state['bridge_docx_ready'].getvalue(), 
+                    file_name="Acrow_Bridge_Full_Report.docx", 
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
