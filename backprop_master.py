@@ -46,7 +46,9 @@ def plot_zone_system(conf):
             'level': f'Existing Slab {i+1}', 
             'attacking': results[-1]['transferred'], 
             'capacity': avail_cap, 
-            'transferred': current_P
+            'transferred': current_P,
+            'sidl': slab['sidl'],
+            'll': slab['ll']
         })
         
     num_levels = len(results)
@@ -62,10 +64,11 @@ def plot_zone_system(conf):
         ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
         
         # =========================================================================
-        # 💡 التعديل المطلوب: كتابة قدرة البلاطة (Capacity) بجوارها من جهة اليمين بخط صغير ومناسب
+        # 💡 التعديل: كتابة الأحمال التصميمية (SIDL & LL) فوق البلاطة برمادي غامق بخط رفيع
         # =========================================================================
         if 'Existing' in res['level']:
-            ax.text(7.2, y, f"Capacity: {res['capacity']:.2f} kN/m²", ha='left', va='center', fontsize=10, fontweight='bold', color='darkgreen')
+            load_text = f"SIDL: {res['sidl']:.2f} kN/m²  |  L.L: {res['ll']:.2f} kN/m²"
+            ax.text(6.9, y + 0.25, load_text, ha='right', va='bottom', fontsize=9, fontweight='normal', color='dimgray')
         
         if i < num_levels - 1 and res['transferred'] > 0:
             next_y = y_pos[i+1]
@@ -77,7 +80,6 @@ def plot_zone_system(conf):
             ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             
     ax.set_xlim(0, 8)
-    ax.set_xlim(0, 10.5) # 💡 سطر إضافي لزيادة مساحة العرض لتشمل النص الجديد بدون حذف الكود الأصلي
     ax.set_ylim(0, max(y_pos) + 1)
     ax.axis('off')
     plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
@@ -218,15 +220,12 @@ def generate_backprop_report(configs, ref_code):
 
         add_p("Load Path Diagram:", bold=True)
         p_img = doc.add_paragraph()
-        
-        # 💡 التعديل المخصص: جعل محاذاة الصورة في المنتصف وتوسيعها لتأخذ أفضل عرض أفقي
         p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pPr = p_img._element.get_or_add_pPr()
         bidi = OxmlElement('w:bidi')
         bidi.set(qn('w:val'), '0')
         pPr.append(bidi)
         
-        # زيادة العرض إلى 16.0 سم بدلاً من 12 سم لتغطي كامل الصفحة أفقياً 
         p_img.add_run().add_picture(io.BytesIO(conf['img_buf'].read()), width=Cm(16.0))
             
     out = io.BytesIO()
@@ -260,7 +259,6 @@ def render_backprop_module(ref_code):
             num_exist = st.number_input("Number of Existing Slabs Below", 1, 5, 2, key=f'nx_{idx}')
             existing_slabs = []
             
-            # 💡 متغير لحساب الحمل المتبقي وعرضه مباشرة في واجهة البرنامج (Live UI Update)
             current_ui_transferred = W_fresh
             
             for j in range(int(num_exist)):
@@ -270,7 +268,6 @@ def render_backprop_module(ref_code):
                 sidl_des = ec2.number_input("Design SIDL (kN/m²)", value=0.50, step=0.5, key=f'sidl_{idx}_{j}')
                 strength = ec3.number_input("Strength Achieved (%)", value=80.0, step=5.0, key=f'str_{idx}_{j}')
                 
-                # حساب قدرة البلاطة على الاحتمال
                 slab_capacity = (sidl_des + ll_des) * (strength / 100.0)
                 next_ui_transferred = max(0, current_ui_transferred - slab_capacity)
                 
@@ -297,9 +294,6 @@ def render_backprop_module(ref_code):
                 cap_j = get_shoring_capacity(sys_j, subtype_j, unb_j, ext_j)
                 level_j_shore = {'sys': sys_j, 'gx': gx_j, 'gy': gy_j, 'area': gx_j*gy_j, 'cap': cap_j}
                 
-                # =========================================================================
-                # 💡 التعديل المطلوب: الشيك اللحظي (Live Check) في واجهة البرنامج مباشرة
-                # =========================================================================
                 if next_ui_transferred > 0:
                     actual_leg_load = (gx_j * gy_j) * next_ui_transferred
                     if actual_leg_load <= cap_j:
