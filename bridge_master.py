@@ -8,7 +8,7 @@ import os
 import re
 import ast
 import matplotlib
-matplotlib.use('Agg') # 💡 الحل الجذري الأقوى لمنع أي Crash ناتج عن الرسم في Streamlit
+matplotlib.use('Agg') # 💡 إجبار الماتپلوتليب على وضع الخوادم لمنع انهيار الواجهة
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from docx import Document
@@ -18,56 +18,61 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 # =========================================================
-# 1. HTML Parser Engine (Extracting EVERYTHING Safely)
+# 1. HTML Parser Engine (Bulletproof Extraction)
 # =========================================================
 def parse_bridge_html(html_content):
-    """Parses JavaScript arrays and HTML tables from the provided HTML file safely."""
+    """Parses JavaScript arrays and HTML tables safely without Regex overload."""
     
-    nodes_match = re.search(r'const globalNodes\s*=\s*(\[.*?\]);', html_content, re.DOTALL)
-    elems_match = re.search(r'const globalElements\s*=\s*(\[.*?\]);', html_content, re.DOTALL)
+    # 💡 استخراج الداتا باستخدام String Indexing لمنع انهيار الـ Regex مع الملفات الكبيرة
+    def extract_array_str(var_name):
+        start_marker = f"const {var_name}"
+        idx_start = html_content.find(start_marker)
+        if idx_start == -1: return "[]"
+        
+        idx_bracket = html_content.find("[", idx_start)
+        idx_end = html_content.find("];", idx_bracket)
+        if idx_bracket == -1 or idx_end == -1: return "[]"
+        
+        return html_content[idx_bracket : idx_end + 1]
+
+    nodes_raw = extract_array_str("globalNodes")
+    elems_raw = extract_array_str("globalElements")
     
     nodes, elements = None, None
     
     def clean_js_to_python(js_str):
-        js_str = re.sub(r'(?<!")([a-zA-Z_][a-zA-Z0-9_]*)(?=\s*:)', r'"\1"', js_str)
+        # وضع علامات تنصيص حول المفاتيح لمنع أخطاء الـ AST
+        js_str = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', js_str)
         js_str = js_str.replace(': false', ': False').replace(': true', ': True')
         js_str = js_str.replace(':false', ':False').replace(':true', ':True')
         return js_str
         
-    if nodes_match and elems_match:
-        try:
-            nodes_str = clean_js_to_python(nodes_match.group(1))
-            elems_str = clean_js_to_python(elems_match.group(1))
-            nodes = ast.literal_eval(nodes_str)
-            elements = ast.literal_eval(elems_str)
-        except Exception as e:
-            st.error(f"⚠️ خطأ أثناء قراءة الدياجرامات من الملف: {e}")
+    try:
+        nodes = ast.literal_eval(clean_js_to_python(nodes_raw))
+        elements = ast.literal_eval(clean_js_to_python(elems_raw))
+    except Exception as e:
+        st.error(f"⚠️ خطأ في معالجة المصفوفات الهندسية: {e}")
 
-    # 2. Extract All Tables using Pandas (With Strong Sanitization)
+    # 2. Extract All Tables using Pandas (With PyArrow Crash Bypass)
+    dfs = []
     try:
         raw_dfs = pd.read_html(io.StringIO(html_content))
-        dfs = []
         for df in raw_dfs:
-            # 💡 تعقيم كامل للداتا لتجنب أي PyArrow Crash في Streamlit
-            clean_df = df.fillna("-").astype(str)
+            # تنظيف عنيف لمنع انهيار PyArrow في Streamlit
+            clean_df = df.copy()
+            if isinstance(clean_df.columns, pd.MultiIndex):
+                clean_df.columns = ['_'.join(map(str, col)).strip() for col in clean_df.columns.values]
+            clean_df.columns = clean_df.columns.astype(str)
+            clean_df = clean_df.fillna("-").astype(str)
             dfs.append(clean_df)
     except Exception as e:
-        dfs = []
-        st.warning("⚠️ تعذر استخراج بعض الجداول من الملف المرفق.")
+        st.warning("⚠️ تعذر استخراج بعض الجداول.")
 
     return nodes, elements, dfs
 
 # =========================================================
-# 2. SAP2000 Plotting Engine (Bulletproof Rendering)
+# 2. SAP2000 Plotting Engine (Memory Safe)
 # =========================================================
-def get_img_buf(fig):
-    plt.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', transparent=True)
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
 def draw_base_structure(ax, nodes, elements):
     nodes_dict = {n['id']: n for n in nodes}
     for el in elements:
@@ -94,6 +99,16 @@ def draw_base_structure(ax, nodes, elements):
                 ax.plot([x - 0.2, x + 0.2], [y - h - 2*r, y - h - 2*r], color='limegreen', lw=2.0, zorder=4)
 
     return nodes_dict
+
+def safe_render_fig(fig):
+    """💡 إغلاق الصورة بإحكام وتحويلها لـ Bytes لمنع الـ Memory Leak"""
+    try:
+        plt.tight_layout()
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', transparent=True)
+        return buf.getvalue()
+    finally:
+        plt.close(fig)
 
 def draw_sap2000_forces(val_key, nodes, elements, scale, is_axial=False):
     mpl.rcParams['font.family'] = 'sans-serif'
@@ -149,7 +164,7 @@ def draw_sap2000_forces(val_key, nodes, elements, scale, is_axial=False):
         if abs(vals_orig[max_idx]) > 0.1:
             ax.text(px_arr[max_idx] - s*0.4, py_arr[max_idx] + c*0.4, f"{abs(vals_orig[max_idx]):.1f}", color='black', fontsize=6, ha='center', va='center')
 
-    return get_img_buf(fig)
+    return safe_render_fig(fig)
 
 def draw_sap2000_deflection(nodes, elements, defl_scale):
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -182,7 +197,7 @@ def draw_sap2000_deflection(nodes, elements, defl_scale):
                     arrowprops=dict(facecolor='red', shrink=0.05, width=1.5, headwidth=6),
                     fontsize=8, color='red', fontweight='bold', zorder=10)
 
-    return get_img_buf(fig)
+    return safe_render_fig(fig)
 
 def draw_sap2000_reactions(nodes, elements):
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -206,7 +221,7 @@ def draw_sap2000_reactions(nodes, elements):
             ax.arrow(x + dx, y, -dx*0.8, 0, head_width=0.3, head_length=0.4, fc='darkorange', ec='darkorange', lw=1.5, zorder=6)
             ax.text(x + dx - np.sign(dx)*0.3, y, f"{abs(rx):.1f} kN", color='black', fontsize=7, fontweight='bold', va='center')
 
-    return get_img_buf(fig)
+    return safe_render_fig(fig)
 
 def draw_sap2000_loads(nodes, elements):
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -239,12 +254,12 @@ def draw_sap2000_loads(nodes, elements):
             
         ax.text((x1+x2)/2, (y1+y2)/2 + h + 0.3, f"{abs(w):.2f} kN/m", color='blue', fontsize=7, fontweight='bold', ha='center')
 
-    return get_img_buf(fig)
+    return safe_render_fig(fig)
 
 # =========================================================
 # 3. Comprehensive Report Generator (Word)
 # =========================================================
-def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
+def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bytes_dict):
     if os.path.exists("Acrow_Template.docx"):
         doc = Document("Acrow_Template.docx")
         doc.add_page_break()
@@ -363,13 +378,12 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
     ]
     
     for key, title in diagram_order:
-        buf = img_bufs.get(key)
-        if not buf: continue
-        buf.seek(0)
+        img_bytes = img_bytes_dict.get(key)
+        if not img_bytes: continue
         
         p_img = doc.add_paragraph()
         p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p_img.add_run().add_picture(io.BytesIO(buf.read()), width=Cm(16.5))
+        p_img.add_run().add_picture(io.BytesIO(img_bytes), width=Cm(16.5))
         
         p_txt = doc.add_paragraph()
         p_txt.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -397,7 +411,7 @@ def render_bridge_module():
     if uploaded_file is not None:
         html_content = uploaded_file.getvalue().decode("utf-8")
         
-        with st.spinner("Extracting Nodes, Elements, and Checking Tables..."):
+        with st.spinner("Extracting Nodes, Elements, and Checking Tables safely..."):
             nodes, elements, dfs = parse_bridge_html(html_content)
             
         if nodes and elements:
@@ -406,7 +420,18 @@ def render_bridge_module():
             with st.expander("📊 Preview Extracted Tables (Safety Checks)", expanded=False):
                 for i, df in enumerate(dfs):
                     st.markdown(f"**Table {i+1}**")
-                    st.dataframe(df, use_container_width=True) # 💡 عرض آمن بدون تنسيق لمنع Crash السيرفر
+                    # 💡 تحويل الجدول لـ HTML وتلوين الخلايا لمنع PyArrow Crash
+                    def highlight_status(val):
+                        if 'PASS' in str(val).upper() or 'SAFE' in str(val).upper():
+                            return 'color: green; font-weight: bold;'
+                        elif 'FAIL' in str(val).upper() or 'UNSAFE' in str(val).upper():
+                            return 'color: red; font-weight: bold;'
+                        return ''
+                    
+                    try:
+                        st.markdown(df.style.applymap(highlight_status).to_html(), unsafe_allow_html=True)
+                    except:
+                        st.table(df) # Fallback الآمن تماماً
             
             st.markdown("---")
             
@@ -443,25 +468,25 @@ def render_bridge_module():
                     
                     st.image(img_bufs['R'], caption="Support Reactions Diagram")
                 except Exception as e:
-                    st.error(f"❌ حدث خطأ أثناء رسم الدياجرامات، يرجى مراجعة الداتا المرفقة: {e}")
+                    st.error(f"❌ حدث خطأ أثناء رسم الدياجرامات: {e}")
                 
             st.markdown("---")
             
-            # --- PROCESS BUTTON SEPARATED FROM DOWNLOAD TO AVOID STREAMLIT EXCEPTION ---
+            # --- PROCESS BUTTON SEPARATED FROM DOWNLOAD TO AVOID MEMORY ISSUES ---
             if img_bufs:
                 if st.button("🚀 Process & Prepare Calculation Sheet", type="primary", use_container_width=True):
                     with st.spinner("Building Comprehensive Word Document..."):
                         try:
                             docx_out = generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs)
-                            st.session_state['bridge_docx_ready'] = docx_out
+                            st.session_state['bridge_docx_bytes'] = docx_out.getvalue() # حفظ كـ Bytes نقية
                             st.success("✅ Document Ready! You can download it below.")
                         except Exception as e:
                             st.error(f"⚠️ خطأ أثناء تجميع ملف الوورد: {e}")
                 
-                if 'bridge_docx_ready' in st.session_state:
+                if 'bridge_docx_bytes' in st.session_state:
                     st.download_button(
                         "⬇️ Download Full Bridge Calculation Sheet (Word)", 
-                        data=st.session_state['bridge_docx_ready'].getvalue(), 
+                        data=st.session_state['bridge_docx_bytes'], 
                         file_name="Acrow_Bridge_Full_Report.docx", 
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
