@@ -61,6 +61,12 @@ def plot_zone_system(conf):
         ax.add_patch(rect)
         ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
         
+        # =========================================================================
+        # 💡 التعديل المطلوب: كتابة قدرة البلاطة (Capacity) بجوارها من جهة اليمين بخط صغير ومناسب
+        # =========================================================================
+        if 'Existing' in res['level']:
+            ax.text(7.2, y, f"Capacity: {res['capacity']:.2f} kN/m²", ha='left', va='center', fontsize=10, fontweight='bold', color='darkgreen')
+        
         if i < num_levels - 1 and res['transferred'] > 0:
             next_y = y_pos[i+1]
             ax.annotate('', xy=(4, next_y+0.2), xytext=(4, y-0.2),
@@ -71,6 +77,7 @@ def plot_zone_system(conf):
             ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             
     ax.set_xlim(0, 8)
+    ax.set_xlim(0, 10.5) # 💡 سطر إضافي لزيادة مساحة العرض لتشمل النص الجديد بدون حذف الكود الأصلي
     ax.set_ylim(0, max(y_pos) + 1)
     ax.axis('off')
     plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
@@ -211,8 +218,16 @@ def generate_backprop_report(configs, ref_code):
 
         add_p("Load Path Diagram:", bold=True)
         p_img = doc.add_paragraph()
-        force_ltr_left(p_img)
-        p_img.add_run().add_picture(io.BytesIO(conf['img_buf'].read()), width=Cm(12.0))
+        
+        # 💡 التعديل المخصص: جعل محاذاة الصورة في المنتصف وتوسيعها لتأخذ أفضل عرض أفقي
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pPr = p_img._element.get_or_add_pPr()
+        bidi = OxmlElement('w:bidi')
+        bidi.set(qn('w:val'), '0')
+        pPr.append(bidi)
+        
+        # زيادة العرض إلى 16.0 سم بدلاً من 12 سم لتغطي كامل الصفحة أفقياً 
+        p_img.add_run().add_picture(io.BytesIO(conf['img_buf'].read()), width=Cm(16.0))
             
     out = io.BytesIO()
     doc.save(out)
