@@ -1,5 +1,8 @@
 # app.py
 
+import matplotlib
+matplotlib.use('Agg') # 💡 الحل الجذري لمنع أي Crash للبرنامج بسبب الرسوميات
+
 import os
 import io
 import gc
