@@ -48,7 +48,8 @@ def plot_zone_system(conf):
             'capacity': avail_cap, 
             'transferred': current_P,
             'sidl': slab['sidl'],
-            'll': slab['ll']
+            'll': slab['ll'],
+            'strength': slab['strength'] # 💡 إضافة نسبة القوة للمصفوفة
         })
         
     num_levels = len(results)
@@ -64,11 +65,16 @@ def plot_zone_system(conf):
         ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
         
         # =========================================================================
-        # 💡 التعديل: تصغير الخط وإزاحة النص لليمين لعدم التقاطع مع الخط الرأسي
+        # 💡 التعديلات المطلوبة على النصوص حول البلاطة القديمة
         # =========================================================================
         if 'Existing' in res['level']:
+            # 1. رفع النص للأعلى (y + 0.35) ووضعه فوق البلاطة مباشرة
             load_text = f"SIDL: {res['sidl']:.2f} kN/m²  |  L.L: {res['ll']:.2f} kN/m²"
-            ax.text(7.4, y + 0.25, load_text, ha='right', va='bottom', fontsize=8, fontweight='normal', color='dimgray')
+            ax.text(6.9, y + 0.35, load_text, ha='right', va='bottom', fontsize=8, fontweight='normal', color='dimgray')
+            
+            # 2. إضافة نسبة الـ Strength Ratio على يمين البلاطة
+            str_text = f"Strength Achieved\n{res['strength']:.0f}%"
+            ax.text(7.2, y, str_text, ha='left', va='center', fontsize=9, fontweight='bold', color='teal')
         
         if i < num_levels - 1 and res['transferred'] > 0:
             next_y = y_pos[i+1]
@@ -79,8 +85,7 @@ def plot_zone_system(conf):
             ax.plot([2.5, 2.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             
-    ax.set_xlim(0, 8)
-    ax.set_xlim(0, 10.5) 
+    ax.set_xlim(0, 10.0) # 💡 توسيع الإطار الأفقي قليلاً لاحتواء النصوص الجديدة بالكامل
     ax.set_ylim(0, max(y_pos) + 1)
     ax.axis('off')
     plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
