@@ -64,11 +64,11 @@ def plot_zone_system(conf):
         ax.text(4, y, res['level'], ha='center', va='center', fontsize=12, fontweight='bold', color='white')
         
         # =========================================================================
-        # 💡 التعديل: كتابة الأحمال التصميمية (SIDL & LL) فوق البلاطة برمادي غامق بخط رفيع
+        # 💡 التعديل: تصغير الخط وإزاحة النص لليمين لعدم التقاطع مع الخط الرأسي
         # =========================================================================
         if 'Existing' in res['level']:
             load_text = f"SIDL: {res['sidl']:.2f} kN/m²  |  L.L: {res['ll']:.2f} kN/m²"
-            ax.text(6.9, y + 0.25, load_text, ha='right', va='bottom', fontsize=9, fontweight='normal', color='dimgray')
+            ax.text(7.4, y + 0.25, load_text, ha='right', va='bottom', fontsize=8, fontweight='normal', color='dimgray')
         
         if i < num_levels - 1 and res['transferred'] > 0:
             next_y = y_pos[i+1]
@@ -80,6 +80,7 @@ def plot_zone_system(conf):
             ax.plot([5.5, 5.5], [y-0.2, next_y+0.2], color='black', linewidth=3)
             
     ax.set_xlim(0, 8)
+    ax.set_xlim(0, 10.5) 
     ax.set_ylim(0, max(y_pos) + 1)
     ax.axis('off')
     plt.title("Load Transfer Diagram", fontsize=12, fontweight='bold')
