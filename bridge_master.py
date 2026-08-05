@@ -7,9 +7,10 @@ import io
 import os
 import re
 import ast
-import matplotlib as mpl
+import matplotlib
+matplotlib.use('Agg') # 💡 الحل الجذري الأقوى لمنع أي Crash ناتج عن الرسم في Streamlit
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon, FancyArrowPatch
+from matplotlib.patches import Polygon
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -20,9 +21,8 @@ from docx.oxml.ns import qn
 # 1. HTML Parser Engine (Extracting EVERYTHING Safely)
 # =========================================================
 def parse_bridge_html(html_content):
-    """Parses JavaScript arrays and HTML tables from the provided HTML file."""
+    """Parses JavaScript arrays and HTML tables from the provided HTML file safely."""
     
-    # 1. Extract Nodes and Elements
     nodes_match = re.search(r'const globalNodes\s*=\s*(\[.*?\]);', html_content, re.DOTALL)
     elems_match = re.search(r'const globalElements\s*=\s*(\[.*?\]);', html_content, re.DOTALL)
     
@@ -41,19 +41,24 @@ def parse_bridge_html(html_content):
             nodes = ast.literal_eval(nodes_str)
             elements = ast.literal_eval(elems_str)
         except Exception as e:
-            st.error(f"⚠️ خطأ في قراءة بيانات المصفوفات: {e}")
+            st.error(f"⚠️ خطأ أثناء قراءة الدياجرامات من الملف: {e}")
 
-    # 2. Extract All Tables using Pandas
+    # 2. Extract All Tables using Pandas (With Strong Sanitization)
     try:
-        dfs = pd.read_html(io.StringIO(html_content))
+        raw_dfs = pd.read_html(io.StringIO(html_content))
+        dfs = []
+        for df in raw_dfs:
+            # 💡 تعقيم كامل للداتا لتجنب أي PyArrow Crash في Streamlit
+            clean_df = df.fillna("-").astype(str)
+            dfs.append(clean_df)
     except Exception as e:
         dfs = []
-        st.warning("⚠️ تعذر استخراج الجداول من الملف المرفق.")
+        st.warning("⚠️ تعذر استخراج بعض الجداول من الملف المرفق.")
 
     return nodes, elements, dfs
 
 # =========================================================
-# 2. SAP2000 Plotting Engine (All Diagrams)
+# 2. SAP2000 Plotting Engine (Bulletproof Rendering)
 # =========================================================
 def get_img_buf(fig):
     plt.tight_layout()
@@ -68,11 +73,11 @@ def draw_base_structure(ax, nodes, elements):
     for el in elements:
         n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
         if not n1 or not n2: continue
-        ax.plot([n1['x'], n2['x']], [n1['y'], n2['y']], color='dimgray', linewidth=1.5, zorder=1)
+        ax.plot([float(n1['x']), float(n2['x'])], [float(n1['y']), float(n2['y'])], color='dimgray', linewidth=1.5, zorder=1)
         
     for n in nodes:
         if n.get('fixX') or n.get('fixY') or n.get('fixT'):
-            x, y = n['x'], n['y']
+            x, y = float(n['x']), float(n['y'])
             t = 'Fixed' if (n.get('fixX') and n.get('fixY') and n.get('fixT')) else \
                 'Hinged' if (n.get('fixX') and n.get('fixY')) else 'Roller'
                 
@@ -104,8 +109,8 @@ def draw_sap2000_forces(val_key, nodes, elements, scale, is_axial=False):
         n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
         if not n1 or not n2: continue
         
-        x1, y1 = n1['x'], n1['y']
-        x2, y2 = n2['x'], n2['y']
+        x1, y1 = float(n1['x']), float(n1['y'])
+        x2, y2 = float(n2['x']), float(n2['y'])
         dx, dy = x2 - x1, y2 - y1
         L_s = np.hypot(dx, dy)
         if L_s < 1e-5: continue
@@ -114,8 +119,8 @@ def draw_sap2000_forces(val_key, nodes, elements, scale, is_axial=False):
         diag_arr = el.get('axialDiag' if is_axial else 'diag', [])
         if not diag_arr: continue
         
-        ts = np.array([pt['t'] for pt in diag_arr])
-        vals_orig = np.array([pt.get('n' if is_axial else val_key.lower(), 0) for pt in diag_arr])
+        ts = np.array([float(pt.get('t', 0)) for pt in diag_arr])
+        vals_orig = np.array([float(pt.get('n' if is_axial else val_key.lower(), 0)) for pt in diag_arr])
         if len(vals_orig) == 0: continue
         
         plot_vals = -vals_orig if val_key != 'N' else vals_orig
@@ -159,16 +164,18 @@ def draw_sap2000_deflection(nodes, elements, defl_scale):
     for el in elements:
         n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
         if not n1 or not n2: continue
-        x1, y1 = n1['x'] + n1.get('dx', 0) * defl_scale, n1['y'] + n1.get('dy', 0) * defl_scale
-        x2, y2 = n2['x'] + n2.get('dx', 0) * defl_scale, n2['y'] + n2.get('dy', 0) * defl_scale
+        x1 = float(n1['x']) + float(n1.get('dx', 0)) * defl_scale
+        y1 = float(n1['y']) + float(n1.get('dy', 0)) * defl_scale
+        x2 = float(n2['x']) + float(n2.get('dx', 0)) * defl_scale
+        y2 = float(n2['y']) + float(n2.get('dy', 0)) * defl_scale
         ax.plot([x1, x2], [y1, y2], color='red', linestyle='--', linewidth=1.5, alpha=0.8, zorder=3)
         
     for n in nodes:
-        dx, dy = n.get('dx', 0), n.get('dy', 0)
+        dx, dy = float(n.get('dx', 0)), float(n.get('dy', 0))
         defl = np.hypot(dx, dy)
         if defl > max_defl:
             max_defl = defl
-            max_pt = (n['x'] + dx * defl_scale, n['y'] + dy * defl_scale)
+            max_pt = (float(n['x']) + dx * defl_scale, float(n['y']) + dy * defl_scale)
             
     if max_pt and max_defl > 0.0001:
         ax.annotate(f"Max Defl: {max_defl*1000:.2f} mm", xy=max_pt, xytext=(max_pt[0]+1, max_pt[1]+1),
@@ -185,8 +192,8 @@ def draw_sap2000_reactions(nodes, elements):
     draw_base_structure(ax, nodes, elements)
     
     for n in nodes:
-        rx, ry = n.get('rx', 0), n.get('ry', 0)
-        x, y = n['x'], n['y']
+        rx, ry = float(n.get('rx', 0)), float(n.get('ry', 0))
+        x, y = float(n['x']), float(n['y'])
         arr_len = 1.2
         
         if abs(ry) > 0.1:
@@ -208,17 +215,17 @@ def draw_sap2000_loads(nodes, elements):
     
     nodes_dict = draw_base_structure(ax, nodes, elements)
     
-    max_w = max([abs(el.get('wTotal', 0)) for el in elements] + [1])
+    max_w = max([abs(float(el.get('wTotal', 0))) for el in elements] + [1])
     scale_h = 1.5 / max_w
     
     for el in elements:
-        w = el.get('wTotal', 0)
+        w = float(el.get('wTotal', 0))
         if abs(w) < 0.1: continue
         
         n1, n2 = nodes_dict.get(el['i']), nodes_dict.get(el['j'])
         if not n1 or not n2: continue
-        x1, y1 = n1['x'], n1['y']
-        x2, y2 = n2['x'], n2['y']
+        x1, y1 = float(n1['x']), float(n1['y'])
+        x2, y2 = float(n2['x']), float(n2['y'])
         
         h = abs(w) * scale_h
         poly = Polygon([(x1,y1), (x1, y1+h), (x2, y2+h), (x2, y2)], facecolor='royalblue', edgecolor='blue', alpha=0.3, zorder=2)
@@ -264,14 +271,11 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
         return p
 
     def add_df_to_word(doc, df, title):
-        if df.empty or len(df.columns) == 0:
-            return
-            
+        if df.empty or len(df.columns) == 0: return
         add_line(title, bold=True, size=13, color=RGBColor(0,0,128))
         table = doc.add_table(rows=1, cols=len(df.columns))
         table.style = 'Table Grid'
         
-        # Add Headers
         hdr_cells = table.rows[0].cells
         for i, col in enumerate(df.columns):
             hdr_cells[i].text = str(col)
@@ -280,12 +284,10 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
                     run.font.bold = True
                     run.font.size = Pt(8)
                     
-        # Add Rows with color formatting for PASS/FAIL
         for index, row in df.iterrows():
             row_cells = table.add_row().cells
             for i, val in enumerate(row):
                 cell_text = str(val)
-                if cell_text == "nan": cell_text = "-"
                 row_cells[i].text = cell_text
                 for paragraph in row_cells[i].paragraphs:
                     for run in paragraph.runs:
@@ -311,14 +313,14 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
     add_line(f"- Total Nodes Analyzed: {len(nodes)}")
     add_line(f"- Total Elements Analyzed: {len(elements)}")
     
-    # حساب أقصى قيم
     max_m, max_v, max_n_tens, max_n_comp = 0, 0, 0, 0
     for el in elements:
-        if 'maxM' in el: max_m = max(max_m, abs(el['maxM']))
-        if 'maxV' in el: max_v = max(max_v, abs(el['maxV']))
+        if 'maxM' in el: max_m = max(max_m, abs(float(el['maxM'])))
+        if 'maxV' in el: max_v = max(max_v, abs(float(el['maxV'])))
         if 'maxN' in el:
-            if el['maxN'] > 0: max_n_tens = max(max_n_tens, el['maxN'])
-            else: max_n_comp = min(max_n_comp, el['maxN'])
+            n_val = float(el['maxN'])
+            if n_val > 0: max_n_tens = max(max_n_tens, n_val)
+            else: max_n_comp = min(max_n_comp, n_val)
             
     add_line("\n2. Global Force Extremes:", bold=True)
     add_line(f"- Maximum Bending Moment = {max_m:.2f} kN.m")
@@ -329,7 +331,7 @@ def generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs):
     add_line("\n3. Support Reactions:", bold=True)
     for n in nodes:
         if n.get('fixX') or n.get('fixY') or n.get('fixT'):
-            rx, ry = n.get('rx', 0), n.get('ry', 0)
+            rx, ry = float(n.get('rx', 0)), float(n.get('ry', 0))
             add_line(f"- Node {n.get('name', 'N')}: Rx = {rx:.2f} kN | Ry = {ry:.2f} kN", color=RGBColor(0, 100, 0))
 
     # --- 2. Tables ---
@@ -402,26 +404,9 @@ def render_bridge_module():
             st.success(f"✅ Data Extracted Successfully! Found **{len(nodes)} Nodes**, **{len(elements)} Elements**, and **{len(dfs)} Analysis Tables**.")
             
             with st.expander("📊 Preview Extracted Tables (Safety Checks)", expanded=False):
-                def apply_color(val):
-                    text = str(val).upper()
-                    if "PASS" in text or "SAFE" in text: return "background-color: #d4edda; color: green; font-weight: bold;"
-                    elif "FAIL" in text or "UNSAFE" in text: return "background-color: #f8d7da; color: red; font-weight: bold;"
-                    return ""
-                    
                 for i, df in enumerate(dfs):
                     st.markdown(f"**Table {i+1}**")
-                    try:
-                        style_cols = [c for c in df.columns if c in ['Status', 'Load Status']]
-                        if style_cols:
-                            if hasattr(df.style, 'map'):
-                                styled_df = df.style.map(apply_color, subset=style_cols)
-                            else:
-                                styled_df = df.style.applymap(apply_color, subset=style_cols)
-                            st.dataframe(styled_df)
-                        else:
-                            st.dataframe(df)
-                    except Exception:
-                        st.dataframe(df) # Safe Fallback
+                    st.dataframe(df, use_container_width=True) # 💡 عرض آمن بدون تنسيق لمنع Crash السيرفر
             
             st.markdown("---")
             
@@ -433,46 +418,51 @@ def render_bridge_module():
             sc_m = c_s3.slider("Moment Scale", 0.001, 0.100, 0.015, step=0.001)
             sc_d = c_s4.slider("Deflection Scale", 1.0, 100.0, 20.0, step=1.0)
             
+            img_bufs = {}
             with st.spinner("Rendering SAP2000-Style Diagrams..."):
-                img_bufs = {
-                    'L': draw_sap2000_loads(nodes, elements),
-                    'N': draw_sap2000_forces('N', nodes, elements, sc_n, is_axial=True),
-                    'V': draw_sap2000_forces('V', nodes, elements, sc_v),
-                    'M': draw_sap2000_forces('M', nodes, elements, sc_m),
-                    'D': draw_sap2000_deflection(nodes, elements, sc_d),
-                    'R': draw_sap2000_reactions(nodes, elements)
-                }
-                
-                # Display Live Preview
-                st.image(img_bufs['L'], caption="Applied Loads Diagram")
-                
-                c_p1, c_p2 = st.columns(2)
-                c_p1.image(img_bufs['M'], caption="Bending Moment Diagram (kN.m)")
-                c_p2.image(img_bufs['V'], caption="Shear Force Diagram (kN)")
-                
-                c_p3, c_p4 = st.columns(2)
-                c_p3.image(img_bufs['N'], caption="Axial Force Diagram (kN)")
-                c_p4.image(img_bufs['D'], caption="Deflection Deformed Shape")
-                
-                st.image(img_bufs['R'], caption="Support Reactions Diagram")
+                try:
+                    img_bufs = {
+                        'L': draw_sap2000_loads(nodes, elements),
+                        'N': draw_sap2000_forces('N', nodes, elements, sc_n, is_axial=True),
+                        'V': draw_sap2000_forces('V', nodes, elements, sc_v),
+                        'M': draw_sap2000_forces('M', nodes, elements, sc_m),
+                        'D': draw_sap2000_deflection(nodes, elements, sc_d),
+                        'R': draw_sap2000_reactions(nodes, elements)
+                    }
+                    
+                    # Display Live Preview
+                    st.image(img_bufs['L'], caption="Applied Loads Diagram")
+                    
+                    c_p1, c_p2 = st.columns(2)
+                    c_p1.image(img_bufs['M'], caption="Bending Moment Diagram (kN.m)")
+                    c_p2.image(img_bufs['V'], caption="Shear Force Diagram (kN)")
+                    
+                    c_p3, c_p4 = st.columns(2)
+                    c_p3.image(img_bufs['N'], caption="Axial Force Diagram (kN)")
+                    c_p4.image(img_bufs['D'], caption="Deflection Deformed Shape")
+                    
+                    st.image(img_bufs['R'], caption="Support Reactions Diagram")
+                except Exception as e:
+                    st.error(f"❌ حدث خطأ أثناء رسم الدياجرامات، يرجى مراجعة الداتا المرفقة: {e}")
                 
             st.markdown("---")
             
             # --- PROCESS BUTTON SEPARATED FROM DOWNLOAD TO AVOID STREAMLIT EXCEPTION ---
-            if st.button("🚀 Process & Prepare Calculation Sheet", type="primary", use_container_width=True):
-                with st.spinner("Building Comprehensive Word Document..."):
-                    try:
-                        docx_out = generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs)
-                        st.session_state['bridge_docx_ready'] = docx_out
-                        st.success("✅ Document Ready! You can download it below.")
-                    except Exception as e:
-                        st.error(f"⚠️ خطأ أثناء تجميع ملف الوورد: {e}")
-            
-            if 'bridge_docx_ready' in st.session_state:
-                st.download_button(
-                    "⬇️ Download Full Bridge Calculation Sheet (Word)", 
-                    data=st.session_state['bridge_docx_ready'].getvalue(), 
-                    file_name="Acrow_Bridge_Full_Report.docx", 
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
-                )
+            if img_bufs:
+                if st.button("🚀 Process & Prepare Calculation Sheet", type="primary", use_container_width=True):
+                    with st.spinner("Building Comprehensive Word Document..."):
+                        try:
+                            docx_out = generate_comprehensive_bridge_report(nodes, elements, dfs, img_bufs)
+                            st.session_state['bridge_docx_ready'] = docx_out
+                            st.success("✅ Document Ready! You can download it below.")
+                        except Exception as e:
+                            st.error(f"⚠️ خطأ أثناء تجميع ملف الوورد: {e}")
+                
+                if 'bridge_docx_ready' in st.session_state:
+                    st.download_button(
+                        "⬇️ Download Full Bridge Calculation Sheet (Word)", 
+                        data=st.session_state['bridge_docx_ready'].getvalue(), 
+                        file_name="Acrow_Bridge_Full_Report.docx", 
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
